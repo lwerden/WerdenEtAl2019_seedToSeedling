@@ -1,0 +1,15 @@
+---
+title: "readme"
+author: "leland werden"
+date: "10/5/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Description of repo
+
+This contains analysis scripts and output for:  
+Werden, L.K., Holl, K.D., Rosales, J.A.. Sylvester, J.M., Zahawi, R.A. 2019. Effects of dispersal- and niche-based factors on tree recruitment in tropical wet forest restoration. In review. 

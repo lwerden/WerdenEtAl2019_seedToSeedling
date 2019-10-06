@@ -1,0 +1,1714 @@
+---
+title: "WerdenEtAl2019_Analysis"
+output:
+  html_document: default
+---
+
+## Werden et al. 2019 R data ananysis script and results 
+This script does all analysis for:  
+Werden, L.K., Holl, K.D., Rosales, J.A.. Sylvester, J.M., Zahawi, R.A. 2019. Effects of dispersal- and niche-based factors on tree recruitment in tropical wet forest restoration. In review. 
+
+
+#### Required packages
+```{r, warning=FALSE, message=FALSE}
+require(tidyverse)
+require(broom)
+require(knitr)
+require(reshape2)
+require(ggpubr)
+require(rstan)
+require(brms)
+require(brmstools)
+require(bayesplot)
+require(shinystan)
+require(emmeans)
+require(sjstats)
+require(vcdExtra)
+require(car)
+require(lme4)
+```
+
+```{r set-options}
+options(width=80)
+opts_chunk$set(tidy = TRUE, size="small")
+```
+
+## Werden et al. 2019 data analysis script info: 
+This script does the following:  
+1) Imports and organizes the 2013-2016 seed rain data, the 2013-2016 seedling data, species trait data, and vegetation structure data used in Werden et al. 2019  
+2) Calculates seed and seedling limitation parameters following:  
+Muller-Landau, H. C., S. J. Wright, O. Calderón, S. P. Hubbell, and R. B. Foster. “Assessing Recruitment Limitation: Concepts, Methods and Case-Studies from a Tropical Forest.” In Seed Dispersal and Frugivory: Ecology, Evolution and Conservation, edited by D. J. Levey, W. R. Silva, and M. Galetti, 35–53. Wallingford: CABI, 2002. https://doi.org/10.1079/9780851995250.0035.  
+3) Performs randomization procedures and compares observed and expected seed and establishment limitation (Question 2 in manuscript)     
+4) Models seed-to-seedling transitions (Question 1 in manuscript)  
+5) Makes all figures and tables that contain data in the manuscript and saves them as objects (see list at end of document)  
+<br><br>
+
+### Read in the clean data & set seet for reproducability
+seed rain data: 'seedrainWorking'; recruitment data: 'recruitmentWorking'; species trait data: 'islasTraits'; canopy cover data: 'vegStructureSummary'  
+```{r, warning=FALSE}
+# load all data objects
+load("WerdenEtAl2019Data.RData")
+
+# seed seed for reproducability 
+set.seed(8675309)
+```
+<br><br>
+
+## Make summaries and calculate seed/establishment limitation 
+<br><br>
+
+### Make seed rain summaries and calculate seed limitation
+The section below calculates seed limitation and deposition summaries for each species X treatment combination. Calculations done for each species at the trap level.  
+```{r, warning=FALSE}
+# trap-level calculations
+# summarize seed rain at the trap level for species X treatment combinations 
+seedRain_All_byTreat_trap <- seedrainWorking %>% 
+                        # only including understory (UT)/ canopy trees (CT).
+                        filter(Growthform %in% c("CT", "UT")) %>% 
+                        # grouping by sites, treatments, stations (n = 4 per treatment plot), seed traps, and species
+                        group_by(Site, Treatment, Plot, Trap, Species) %>% 
+                        # sum of seeds for each species falling in each trap
+                        summarize(seedsSum=sum(SR, na.rm = TRUE)) %>% 
+                        # make column showing if a species was present (1) or absent (0) for limitation calculations
+                        mutate(present = ifelse(seedsSum>0, "1", "0")) 
+
+seedRain_All_byTreat_trap$present <- as.numeric(seedRain_All_byTreat_trap$present) 
+
+# calculate seed limitation sensu Muller-Landau et al. 2002 for species X treatment combinations @ trap level 
+seedRain_seedLimitationCalcs_trap <- seedRain_All_byTreat_trap %>% 
+                       group_by(Treatment, Species) %>% 
+                       summarize(# total number seeds per species
+                                 totalSeeds = sum(seedsSum, na.rm = TRUE), 
+                                 # total traps that seeds appear in
+                                 stationReachedSum_seeds=sum(present, na.rm = TRUE)) %>% 
+                                 # calculate seed limitation
+                                 mutate(seedLimitation=NA) %>% 
+                                 # 60 traps total in natural regen. (C), applied nucleation (I) and plantations (12 traps X 5 sites)  
+                                 mutate(seedLimitation=ifelse(Treatment == "C" | Treatment == "I" | Treatment == "P", 1-(stationReachedSum_seeds/60), seedLimitation)) %>% 
+                                 # 36 traps total in references (12 traps X 3 sites)
+                                 mutate(seedLimitation=ifelse(Treatment == "R", 1-(stationReachedSum_seeds/36), seedLimitation)) 
+
+
+#-------
+# station level calculations
+# summarize seed rain at the station level for species X treatment combinations 
+seedRain_All_byTreat_station <- seedrainWorking %>% 
+                        # only including understory (UT)/ canopy trees (CT).
+                        filter(Growthform %in% c("CT", "UT")) %>% 
+                        # grouping by sites, treatments, stations (n = 4 per treatment plot), seed traps, and species
+                        group_by(Site, Treatment, Plot, Species) %>% 
+                        # sum of seeds for each species falling in each trap
+                        summarize(seedsSum=sum(SR, na.rm = TRUE)) %>% 
+                        # make column showing if a species was present (1) or absent (0) for limitation calculations
+                        mutate(present = ifelse(seedsSum>0, "1", "0")) 
+
+seedRain_All_byTreat_station$present <- as.numeric(seedRain_All_byTreat_station$present) 
+
+
+# calculate seed limitation sensu Muller-Landau et al. 2002 for species X treatment combinations @ trap level 
+seedRain_seedLimitationCalcs_station <- seedRain_All_byTreat_station %>% 
+                       group_by(Treatment, Species) %>% 
+                        
+                       summarize(# total number seeds per species
+                                 totalSeeds = sum(seedsSum, na.rm = TRUE), 
+                                 # total traps that seeds appear in
+                                 stationReachedSum_seeds=sum(present, na.rm = TRUE)) %>%
+                                 # calculate seed limitation
+                                 mutate(seedLimitation=NA) %>% 
+                                 # 60 traps total in natural regen. (C), applied nucleation (I) and plantations (12 traps X 5 sites)  
+                                 mutate(seedLimitation=ifelse(Treatment == "C" | Treatment == "I" | Treatment == "P", 1-(stationReachedSum_seeds/60), seedLimitation)) %>% 
+                                 # 36 traps total in references (12 traps X 3 sites)
+                                 mutate(seedLimitation=ifelse(Treatment == "R", 1-(stationReachedSum_seeds/36), seedLimitation)) 
+
+
+```
+<br><br>
+
+### Calculate recruitment summaries 
+The section below calculates seedling limitation values (not used in manuscript) and recruitment summaries for each species X treatment combination. Calculations done for each species at the station level (n = 4 per treatment plot).  
+```{r, warning=FALSE} 
+# number of seeding species recruiting grouped by treatment and site
+seedlingsAll_byTreat <- recruitmentWorking %>%
+                        # only use trees
+                        filter(Growthform %in% c("CT", "UT")) %>% 
+                        # only use sites where seed rain was monitored continuously 
+                        filter(site %in% c("BB", "EC", "JG", "MM", "SG")) %>% 
+                        # remove small island sampling plots where seed traps were not placed
+                        filter(isz %in% c(NA, "1", "M", "L")) %>% 
+                        # only include years where seed traps sampled
+                        filter(year %in% c("2014", "2015", "2016", "2017")) %>% 
+                        # grouping by site, treatment, station (FQ), species (spec)
+                        group_by(site, treat, FQ, spec) %>%
+                        # sum of seedlings in each station (FQ)
+                        summarize(count = n()) %>% 
+                        # make column showing if a species was present (1) or absent (0) for limitation calculations
+                        mutate(present = as.numeric(ifelse(count>0, "1", "0"))) 
+
+# drop levels and rename columns
+seedlingsAll_byTreat <- droplevels(seedlingsAll_byTreat)
+names(seedlingsAll_byTreat)[1] <- "Site"
+names(seedlingsAll_byTreat)[2] <- "Treatment"
+names(seedlingsAll_byTreat)[4] <- "Species"
+
+# calculate seedling limitation by species X treatment
+seedlings_limitationCalcs_all <- seedlingsAll_byTreat %>% 
+                                 group_by(Treatment, Species) %>% 
+                                 summarize(totalSeedlings = sum(count, na.rm = TRUE), 
+                                           stationReachedSum_seedlings=sum(present, na.rm = TRUE)) %>%
+                                 # calculate seedling limitation
+                                 mutate(seedlingLimitation=NA) %>%
+                                 # 20 stations total in natural regen. (C), applied nucleation (I) and plantations (4 stations X 5 sites)  
+                                 mutate(seedlingLimitation=ifelse(Treatment == "C" | Treatment == "I" | Treatment == "P", 1-(stationReachedSum_seedlings/20),seedlingLimitation)) %>% 
+                                 # 12 stations total in reference (4 stations X 3 sites)
+                                 mutate(seedlingLimitation=ifelse(Treatment == "R", 1-(stationReachedSum_seedlings/12),seedlingLimitation)) 
+```
+<br><br>
+
+### Calculate establishment limitation
+Considerations:  
+ * there are 216 traps, there are 76 sapling stations (20 per treatment except for reference forests = 12 plots)  
+ * seed traps are: 0.75 m^2 total for three seed traps, and XX m^2 of seedling area that depends on treatment  
+   - 8m^2 for all but islands = 8/.75 (three .75 m^2 traps per station) = 10.67x larger seedling sampling area  
+   - 10 m^2 for medium islands = 10/.75 (three .75 m^2 traps per station) = 13.33x larger seedling sampling area  
+   - 12 m^2 for large islands = 12/.75 (three .75 m^2 traps per station) = 16x larger seedling sampling area  
+ * The approach of Muscarella et al. 2013 -- (traps = 0.5m^2, seedling plots = 3 m^2 = multiply by 6 to scale up) could be used to scale traps to size of vegetation transects but that would assume uniform dispersal, we are not assuming this for our manuscript but leaving this for future potential analysis  
+ * First calculation does not account for difference in sampling area (establishLimitation), second does (establishLimitation_areaScaled).    
+```{r, warning=FALSE} 
+# join seed limitation and seedling limitation calculation dfs 
+seedsAndSeedlings_joined_all <- full_join(seedRain_seedLimitationCalcs_station, seedlings_limitationCalcs_all, by = c("Treatment", "Species"))
+
+# convert all NAs to 0 for stationReachedSum_seeds and stationReachedSum_seedlings
+seedsAndSeedlings_joined_all$stationReachedSum_seeds[is.na(seedsAndSeedlings_joined_all$stationReachedSum_seeds)] <- 0
+seedsAndSeedlings_joined_all$stationReachedSum_seedlings[is.na(seedsAndSeedlings_joined_all$stationReachedSum_seedlings)] <- 0
+# make NAs in total seeds column = 0
+seedsAndSeedlings_joined_all$totalSeeds[is.na(seedsAndSeedlings_joined_all$totalSeeds)] <- 0
+# make NAs in total seedling column = 0
+seedsAndSeedlings_joined_all$totalSeedlings[is.na(seedsAndSeedlings_joined_all$totalSeedlings)] <- 0
+# make NAs in seedling limitation column = 1
+seedsAndSeedlings_joined_all$totalSeeds[is.na(seedsAndSeedlings_joined_all$totalSeeds)] <- 1
+# make NAs in seed limitation limitation column = 1
+seedsAndSeedlings_joined_all$seedLimitation[is.na(seedsAndSeedlings_joined_all$seedLimitation)] <- 1
+
+
+# calculate establishment limitation for each species X treatment combination 
+# scaled for sampling area (establishLimitation_areaScaled) and not scaled (establishLimitation)
+seedsAndSeedlings_all <- seedsAndSeedlings_joined_all %>% 
+                           group_by(Treatment, Species) %>% 
+                            # calculate establishment limitation (not accounting for area)
+                           mutate(establishLimitation =(1-(stationReachedSum_seedlings/(stationReachedSum_seeds)))) %>% 
+                           # set seeds equal to seedlings if seedlings/no seeds, establish. limit. = 0
+                           mutate(establishLimitation = ifelse(establishLimitation<0, 0, establishLimitation))  %>%
+                           # now calculate establishment limitation with scaled area 
+                           mutate(establishLimitation_areaScaled = NA) %>%
+                           # 10.67x larger area than traps in controls, plantation, reference
+                           mutate(establishLimitation_areaScaled = ifelse(Treatment == "C" | Treatment == "P" | Treatment == "R", 
+                                  (1-(stationReachedSum_seedlings/(stationReachedSum_seeds*10.67))), establishLimitation_areaScaled)) %>% 
+                           # 13.33x larger area in medium islands, 16x larger area in large islands (scale by mean area -- 14.665--  because 2 are medium, and 2 are large)
+                           mutate(establishLimitation_areaScaled = ifelse(Treatment == "I", 
+                                  (1-(stationReachedSum_seedlings/(stationReachedSum_seeds*14.665))), establishLimitation_areaScaled)) 
+                            
+# make any negative establishment limitation = 0, this is a case where there are seedlings but no seeds 
+seedsAndSeedlings_all$establishLimitation[seedsAndSeedlings_all$establishLimitation < 0] <- 0
+# make any negative area scaled establishment limitation = 0, this is a case where there are seedlings but no seeds 
+seedsAndSeedlings_all$establishLimitation_areaScaled[seedsAndSeedlings_all$establishLimitation_areaScaled < 0] <- 0
+
+```
+<br><br>
+
+### Merge final calculation dfs with traits data
+```{r, warning=FALSE}
+# add traits  
+seedsAndSeedlings_all_final <- inner_join(seedsAndSeedlings_all, islasTraits, by = "Species")
+```
+<br><br>
+
+### Filter out species with rare occurances
+Filtering on a treatment level to make lists of species that  
+1) Occur as seeds in >=10% of plots (2 stations) in each treatment (speciesList_seedlings_tenPercentSeedTreat)  
+2) Occur as seeds AND seedlings in >=10% of plots (2 stations) in each treatment (speciesList_seedlings_tenPercentSeedSeedlingTreat)
+```{r, warning=FALSE}
+# rename columns for focal species selection
+# seedlings
+seedlingsAll_byTreat_edit <- seedlingsAll_byTreat
+names(seedlingsAll_byTreat_edit)[3] <- "Plot"
+names(seedlingsAll_byTreat_edit)[5] <- "count_seedling"
+names(seedlingsAll_byTreat_edit)[6] <- "present_seedling"
+
+# seeds
+seedRain_All_byTreat_edit <- seedRain_All_byTreat_station
+names(seedRain_All_byTreat_edit)[6] <- "present_seeds"
+
+# join for calcs
+seedsAndSeedlings_ByPlot_all <- full_join(seedRain_All_byTreat_edit, seedlingsAll_byTreat_edit, by = c("Site", "Treatment", "Plot", "Species"))
+seedsAndSeedlings_ByPlot_all <- as.data.frame(seedsAndSeedlings_ByPlot_all)
+
+# make species a factor 
+seedsAndSeedlings_ByPlot_all$Species <- as.factor(seedsAndSeedlings_ByPlot_all$Species)
+
+# convert all NAs to 0 for present_seeds, count_seedling, and present_seedlingand 
+seedsAndSeedlings_ByPlot_all$present_seeds[is.na(seedsAndSeedlings_ByPlot_all$present_seeds)] <- 0
+seedsAndSeedlings_ByPlot_all$count_seedling[is.na(seedsAndSeedlings_ByPlot_all$count_seedling)] <- 0
+seedsAndSeedlings_ByPlot_all$present_seedling[is.na(seedsAndSeedlings_ByPlot_all$present_seedling)] <- 0
+
+# first make final seedling lists 
+# species list with seeds occuring @ at least 10% of stations in each treatment 
+speciesList_seedlings_tenPercentSeedTreat <- seedsAndSeedlings_ByPlot_all %>%
+                           group_by(Species, Treatment) %>% 
+                           summarize(plotOccurrence_Seeds= sum(present_seeds, na.rm = TRUE), # sum of seeds arriving in all treatments
+                                     plotOccurrence_Seedlings = sum(present_seedling, na.rm = TRUE), 
+                                     seedsSumAll = sum(seedsSum, na.rm = TRUE)) %>% # sum of seedlings arriving in all treatments
+                           filter(plotOccurrence_Seeds >=2)
+
+# species list with seeds and seedlings occuring @ at least 10% of stations
+speciesList_seedlings_tenPercentSeedSeedlingTreat <- seedsAndSeedlings_ByPlot_all %>%
+                           group_by(Species, Treatment) %>% 
+                           summarize(plotOccurrence_Seeds= sum(present_seeds, na.rm = TRUE), # sum of seeds arriving in all treatments
+                                     plotOccurrence_Seedlings = sum(present_seedling, na.rm = TRUE)) %>% # sum of seedlings arriving in all treatments
+                           filter(plotOccurrence_Seeds >=2 & plotOccurrence_Seedlings >=2)
+
+
+
+# --- filter to have final focal species that meet these criteria
+# 10% seed occurence filter 
+seedsAndSeedlings_all_finalSeedFilter <- seedsAndSeedlings_all_final %>% 
+                                         filter(Species %in% speciesList_seedlings_tenPercentSeedTreat$Species[speciesList_seedlings_tenPercentSeedTreat$Treatment == "C"] & Treatment == "C" |
+                                                Species %in% speciesList_seedlings_tenPercentSeedTreat$Species[speciesList_seedlings_tenPercentSeedTreat$Treatment == "I"] & Treatment == "I" |
+                                                Species %in% speciesList_seedlings_tenPercentSeedTreat$Species[speciesList_seedlings_tenPercentSeedTreat$Treatment == "P"] & Treatment == "P" |
+                                                Species %in% speciesList_seedlings_tenPercentSeedTreat$Species[speciesList_seedlings_tenPercentSeedTreat$Treatment == "R"] & Treatment == "R")
+
+# 10% seed and seedling occurence filter
+seedsAndSeedlings_all_finalSeedSeedlingFilter <- seedsAndSeedlings_all_final %>% 
+                                                 filter(Species %in% speciesList_seedlings_tenPercentSeedSeedlingTreat$Species[speciesList_seedlings_tenPercentSeedSeedlingTreat$Treatment == "C"] 
+                                                        & Treatment == "C" |
+                                                        Species %in% speciesList_seedlings_tenPercentSeedSeedlingTreat$Species[speciesList_seedlings_tenPercentSeedSeedlingTreat$Treatment == "I"] 
+                                                        & Treatment == "I" |
+                                                        Species %in% speciesList_seedlings_tenPercentSeedSeedlingTreat$Species[speciesList_seedlings_tenPercentSeedSeedlingTreat$Treatment == "P"] 
+                                                        & Treatment == "P" |
+                                                        Species %in% speciesList_seedlings_tenPercentSeedSeedlingTreat$Species[speciesList_seedlings_tenPercentSeedSeedlingTreat$Treatment == "R"] 
+                                                        & Treatment == "R")
+```
+<br><br>
+
+
+### Names of Final merged data sets for standard seed/establishment limitation parameters 
+Raw data organized by site and treatment data for randomizations and modeling:  
+* seed rain at trap level: seedRain_All_byTreat_trap  
+* seed rain at station level: seedRain_All_byTreat_station  
+* seedlings at station level: seedlingsAll_byTreat  
+
+Merged summaries of observed seed and establishment limitation  
+* Including all species: seedsAndSeedlings_all_final  
+* Including species when there were seeds in >=10% of sampling stations in each treatment: seedsAndSeedlings_all_finalSeedFilter  
+* Including species when there were seeds and seedlings in >=10% of sampling stations in each treatment: seedsAndSeedlings_all_finalSeedSeedlingFilter  
+<br><br>
+
+
+## Perform 'seed limitation' randomization procedure described in Appendix S2 
+The procedure described below compares observed to expected (randomized) seed limitation values  
+<br><br>
+
+### Make seed rain species matrices for each treatment on a trap basis 
+```{r, warning=FALSE}  
+# filter for focal species 
+seedRain_All_forPlotMatrixRando_filter <- seedRain_All_byTreat_trap %>%  
+                                           filter(Species %in% speciesList_seedlings_tenPercentSeedTreat$Species[speciesList_seedlings_tenPercentSeedTreat$Treatment == "C"] 
+                                                  & Treatment == "C" |
+                                                  Species %in% speciesList_seedlings_tenPercentSeedTreat$Species[speciesList_seedlings_tenPercentSeedTreat$Treatment == "I"] 
+                                                  & Treatment == "I" |
+                                                  Species %in% speciesList_seedlings_tenPercentSeedTreat$Species[speciesList_seedlings_tenPercentSeedTreat$Treatment == "P"] 
+                                                  & Treatment == "P" |
+                                                  Species %in% speciesList_seedlings_tenPercentSeedTreat$Species[speciesList_seedlings_tenPercentSeedTreat$Treatment == "R"] 
+                                                  & Treatment == "R")
+# make presence column numeric
+seedRain_All_forPlotMatrixRando_filter$present <- as.numeric(seedRain_All_forPlotMatrixRando_filter$present)
+
+# cast into species matrix
+plotSpeciesMatrixRando_pre <- dcast(seedRain_All_forPlotMatrixRando_filter, Site + Treatment + Plot + Trap ~ Species, value.var = 'seedsSum')
+
+# check to see if # of traps matched up for each treatment = good! 
+table(plotSpeciesMatrixRando_pre$Site, plotSpeciesMatrixRando_pre$Treatment)
+
+# drop unexessary columns, make NAs into zeros 
+plotSpeciesMatrixRando <- plotSpeciesMatrixRando_pre %>%
+                          dplyr::select(-Site, -Plot, -Trap) %>% # remove unnecessary columns
+                          mutate_if(is.numeric, funs(ifelse(is.na(.), 0, .))) # make NAs zeros
+
+# separate into treatments for separate randomizations, drop unnecessary columns, and make NAs into zeros 
+plotSpeciesMatrixRando_C <- plotSpeciesMatrixRando %>%
+                            filter(Treatment == "C") %>%
+                            dplyr::select(-Treatment)
+
+plotSpeciesMatrixRando_I <- plotSpeciesMatrixRando %>%
+                            filter(Treatment == "I") %>%
+                            dplyr::select(-Treatment)
+  
+plotSpeciesMatrixRando_P <- plotSpeciesMatrixRando %>%
+                            filter(Treatment == "P") %>%
+                            dplyr::select(-Treatment)
+
+plotSpeciesMatrixRando_R <- plotSpeciesMatrixRando %>%
+                            filter(Treatment == "R") %>%
+                            dplyr::select(-Treatment)
+```
+<br><br>
+
+
+### Create the matrices you need to do randomizations (both abundance and occurence matrices for each treatment)
+* convert all to occurrence/absence matrices for the random draws  
+```{r}
+# matrices to use separated by treatment: plotSpeciesMatrix_C, plotSpeciesMatrix_I, plotSpeciesMatrix_P, plotSpeciesMatrix_R
+# convert to species X abundance matrices from data frames 
+plotSpeciesMatrix_C_abundance <- as.matrix(plotSpeciesMatrixRando_C)
+plotSpeciesMatrix_I_abundance <- as.matrix(plotSpeciesMatrixRando_I)
+plotSpeciesMatrix_P_abundance <- as.matrix(plotSpeciesMatrixRando_P)
+plotSpeciesMatrix_R_abundance <- as.matrix(plotSpeciesMatrixRando_R)
+
+# remove species that don't have at least 20 seeds arriving in each treatment 
+plotSpeciesMatrix_C_abundance_final <- plotSpeciesMatrix_C_abundance[, !apply(is.na(plotSpeciesMatrix_C_abundance) | plotSpeciesMatrix_C_abundance <= 1, 2, all)]
+plotSpeciesMatrix_I_abundance_final <- plotSpeciesMatrix_I_abundance[, !apply(is.na(plotSpeciesMatrix_I_abundance) | plotSpeciesMatrix_I_abundance <= 1, 2, all)]
+plotSpeciesMatrix_P_abundance_final <- plotSpeciesMatrix_P_abundance[, !apply(is.na(plotSpeciesMatrix_P_abundance) | plotSpeciesMatrix_P_abundance <= 1, 2, all)]
+plotSpeciesMatrix_R_abundance_final <- plotSpeciesMatrix_R_abundance[, !apply(is.na(plotSpeciesMatrix_R_abundance) | plotSpeciesMatrix_R_abundance <= 1, 2, all)]
+
+# convert abundance matrix an occurrence/absence matrix for the random draws
+plotSpeciesMatrix_C_occurrence <- 1*(plotSpeciesMatrix_C_abundance_final>0)
+sppNames_C <- colnames(plotSpeciesMatrix_C_abundance_final)
+plotSpeciesMatrix_I_occurrence <- 1*(plotSpeciesMatrix_I_abundance_final>0)
+sppNames_I <- colnames(plotSpeciesMatrix_I_abundance_final)
+plotSpeciesMatrix_P_occurrence <- 1*(plotSpeciesMatrix_P_abundance_final>0)
+sppNames_P <- colnames(plotSpeciesMatrix_P_abundance_final)
+plotSpeciesMatrix_R_occurrence <- 1*(plotSpeciesMatrix_R_abundance_final>0)
+sppNames_R <- colnames(plotSpeciesMatrix_R_abundance_final)
+```
+<br><br>
+
+
+### Now do randomizations for seed limitation for each treatment
+The goal here is to determine if the seed limitation you observed in the field differs from a null model where seeds are Poisson distributed across the traps (Norden et al. 2019 & Muscarella et al. 2013). For each species the approach will be to:  
+* Randomly select n seed traps (with replacement) from the observed data for each species. In this case n = the total number of seeds observed for a species (sum of the rows for each column).    
+* Calculate randomized seed limitation for each species and compute 95% confidence intervals over the 1,000 iterations  
+* Compare the randomized and observed limitation  
+<br><br>
+
+
+#### Perform the seed limitation randomization procedure for each species X treatment combination
+```{r, warning=FALSE}
+# select n seed traps at random (with replacement) for each species (n = # of seeds observed for a species). Do this 1,000 times and put all the data in a list by species 
+# do this for treatments separately because you have different species arriving up in different treatments
+
+# for controls (natural regeneration)
+RANDO_C <- list()
+for (i in 1:length(plotSpeciesMatrix_C_occurrence[1,])){
+name <- paste('item:',i,sep='')
+RANDO_C[[i]] <- replicate(1000, sample(plotSpeciesMatrix_C_occurrence[,i], sum(plotSpeciesMatrix_C_abundance_final[,i]), replace = TRUE))                            
+}
+names(RANDO_C) <- sppNames_C                                                                        
+
+# for islands (applied nucleation)
+RANDO_I <- list()
+for (i in 1:length(plotSpeciesMatrix_I_occurrence[1,])){
+RANDO_I[[i]] <- replicate(1000, sample(plotSpeciesMatrix_I_occurrence[,i], sum(plotSpeciesMatrix_I_abundance_final[,i]), replace = TRUE))                            
+}
+names(RANDO_I) <- sppNames_I                                                                        
+
+# for plantations
+RANDO_P <- list()
+for (i in 1:length(plotSpeciesMatrix_P_occurrence[1,])){
+RANDO_P[[i]] <- replicate(1000, sample(plotSpeciesMatrix_P_occurrence[,i], sum(plotSpeciesMatrix_P_abundance_final[,i]), replace = TRUE))                            
+}
+names(RANDO_P) <- sppNames_P                                                                        
+
+# for references
+RANDO_R <- list()
+for (i in 1:length(plotSpeciesMatrix_R_occurrence[1,])){
+RANDO_R[[i]] <- replicate(1000, sample(plotSpeciesMatrix_R_occurrence[,i], sum(plotSpeciesMatrix_R_abundance_final[,i]), replace = TRUE))                            
+}
+names(RANDO_R) <- sppNames_R                                                                        
+```
+<br><br>
+
+
+### Calculate randomized seed limitation means and 95% CIs for each species X treatment combination  
+```{r, warning=FALSE}
+##### for controls (natural regeneration)
+
+RANDO_C_df <- melt(RANDO_C) # convert list of random samples to long df
+colnames(RANDO_C_df) <- c("sample", "iteration", "present", "spp") # name columns 
+
+# calculate randomized seed limitation for each of the 1,000 iterations for species
+randomSeedLimitation_calcs_C <- RANDO_C_df %>%
+                              group_by(spp, iteration) %>%
+                              summarize(randomSeedLimitation = 1-(sum(present)/max(sample)))
+
+# summarize and calculate 95% CIs
+randomSeedLimitation_summary_C <- randomSeedLimitation_calcs_C %>%
+                                    group_by(spp) %>%
+                                    summarize(randomSeedLimitation_mean_C = mean(randomSeedLimitation, na.rm = TRUE),
+                                              sd = sd(randomSeedLimitation, na.rm = TRUE),
+                                              n = n()) %>%
+                                    mutate(se = sd / sqrt(n),
+                                           lower.ci = randomSeedLimitation_mean_C - qt(1 - (0.05 / 2), n - 1) * se,
+                                           upper.ci = randomSeedLimitation_mean_C + qt(1 - (0.05 / 2), n - 1) * se)
+
+randomSeedLimitation_summary_C$spp <- as.factor(randomSeedLimitation_summary_C$spp)
+names (randomSeedLimitation_summary_C)[1] <- "Species"
+
+
+# now compare observed to expected seed limitation 
+# select just the species you have observed seed limitation calculations for 
+seedsAndSeedlings_all_C <- seedRain_seedLimitationCalcs_trap[seedRain_seedLimitationCalcs_trap$Treatment == "C",]
+seedsAndSeedlings_all_C<- seedsAndSeedlings_all_C[complete.cases(seedsAndSeedlings_all_C[ , 5]),]
+
+# combine with random seed limitation 
+observedRandomCompare_seedLimitation_C <- inner_join(seedsAndSeedlings_all_C, randomSeedLimitation_summary_C, by = "Species")
+observedRandomCompare_seedLimitation_C_final <- observedRandomCompare_seedLimitation_C[,c("Treatment", "Species", "seedLimitation", "randomSeedLimitation_mean_C", "lower.ci", "upper.ci")]
+
+observedRandomCompare_seedLimitation_C_final <- observedRandomCompare_seedLimitation_C_final %>%
+                                                mutate(deltaSeedLimitation_C = seedLimitation-randomSeedLimitation_mean_C)
+
+#--------
+##### for islands (applied nucleation)
+RANDO_I_df <- melt(RANDO_I) # convert list of random samples to long df
+colnames(RANDO_I_df) <- c("sample", "iteration", "present", "spp") # name columns 
+
+# calculate randomized seed limitation for each of the 1,000 iterations for species
+randomSeedLimitation_calcs_I <- RANDO_I_df %>%
+                              group_by(spp, iteration) %>%
+                              summarize(randomSeedLimitation = 1-(sum(present)/max(sample)))
+
+# summarize and calculate 95% CIs
+randomSeedLimitation_summary_I <- randomSeedLimitation_calcs_I %>%
+                                    group_by(spp) %>%
+                                    summarize(randomSeedLimitation_mean_I = mean(randomSeedLimitation, na.rm = TRUE),
+                                              sd = sd(randomSeedLimitation, na.rm = TRUE),
+                                              n = n()) %>%
+                                    mutate(se = sd / sqrt(n),
+                                           lower.ci = randomSeedLimitation_mean_I - qt(1 - (0.05 / 2), n - 1) * se,
+                                           upper.ci = randomSeedLimitation_mean_I + qt(1 - (0.05 / 2), n - 1) * se)
+
+randomSeedLimitation_summary_I$spp <- as.factor(randomSeedLimitation_summary_I$spp)
+names (randomSeedLimitation_summary_I)[1] <- "Species"
+
+
+# now compare observed to expected seed limitation 
+# get just the species you have observed seed limitation values for
+seedsAndSeedlings_all_I <- seedRain_seedLimitationCalcs_trap[seedRain_seedLimitationCalcs_trap$Treatment == "I",]
+seedsAndSeedlings_all_I<- seedsAndSeedlings_all_I[complete.cases(seedsAndSeedlings_all_I[ , 5]),]
+
+# combine with random seed limitation 
+observedRandomCompare_seedLimitation_I <- inner_join(seedsAndSeedlings_all_I, randomSeedLimitation_summary_I, by = "Species")
+observedRandomCompare_seedLimitation_I_final <- observedRandomCompare_seedLimitation_I[,c("Treatment", "Species", "seedLimitation", "randomSeedLimitation_mean_I", "lower.ci", "upper.ci")]
+
+observedRandomCompare_seedLimitation_I_final <- observedRandomCompare_seedLimitation_I_final %>%
+                                              mutate(deltaSeedLimitation_I = seedLimitation-randomSeedLimitation_mean_I)
+
+
+#--------
+##### for plantations
+RANDO_P_df <- melt(RANDO_P) # convert list of random samples to long df
+colnames(RANDO_P_df) <- c("sample", "iteration", "present", "spp") # name columns 
+
+# calculate randomized seed limitation for each of the 1,000 iterations for species
+randomSeedLimitation_calcs_P <- RANDO_P_df %>%
+                              group_by(spp, iteration) %>%
+                              summarize(randomSeedLimitation = 1-(sum(present)/max(sample)))
+
+# summarize and calculate 95% CIs
+randomSeedLimitation_summary_P <- randomSeedLimitation_calcs_P %>%
+                                    group_by(spp) %>%
+                                    summarize(randomSeedLimitation_mean_P = mean(randomSeedLimitation, na.rm = TRUE),
+                                              sd = sd(randomSeedLimitation, na.rm = TRUE),
+                                              n = n()) %>%
+                                    mutate(se = sd / sqrt(n),
+                                           lower.ci = randomSeedLimitation_mean_P - qt(1 - (0.05 / 2), n - 1) * se,
+                                           upper.ci = randomSeedLimitation_mean_P + qt(1 - (0.05 / 2), n - 1) * se)
+
+randomSeedLimitation_summary_P$spp <- as.factor(randomSeedLimitation_summary_P$spp)
+names (randomSeedLimitation_summary_P)[1] <- "Species"
+
+# now compare observed to expected seed limitation 
+# get just the species you have observed seed limitation values for
+seedsAndSeedlings_all_P <- seedRain_seedLimitationCalcs_trap[seedRain_seedLimitationCalcs_trap$Treatment == "P",]
+seedsAndSeedlings_all_P<- seedsAndSeedlings_all_P[complete.cases(seedsAndSeedlings_all_P[ , 5]),]
+
+# combine with random seed limitation 
+observedRandomCompare_seedLimitation_P <- inner_join(seedsAndSeedlings_all_P, randomSeedLimitation_summary_P, by = "Species")
+observedRandomCompare_seedLimitation_P_final <- observedRandomCompare_seedLimitation_P[,c("Treatment", "Species", "seedLimitation", "randomSeedLimitation_mean_P", "lower.ci", "upper.ci")]
+
+observedRandomCompare_seedLimitation_P_final <- observedRandomCompare_seedLimitation_P_final %>%
+                                              mutate(deltaSeedLimitation_P = seedLimitation-randomSeedLimitation_mean_P)
+
+
+#--------
+##### for reference
+
+RANDO_R_df <- melt(RANDO_R) # convert list of random samples to long df
+colnames(RANDO_R_df) <- c("sample", "iteration", "present", "spp") # name columns 
+
+# calculate randomized seed limitation for each of the 1,000 iterations for species
+randomSeedLimitation_calcs_R <- RANDO_R_df %>%
+                              group_by(spp, iteration) %>%
+                              summarize(randomSeedLimitation = 1-(sum(present)/max(sample)))
+
+# summarize and calculate 95% CIs
+randomSeedLimitation_summary_R <- randomSeedLimitation_calcs_R %>%
+                                    group_by(spp) %>%
+                                    summarize(randomSeedLimitation_mean_R = mean(randomSeedLimitation, na.rm = TRUE),
+                                              sd = sd(randomSeedLimitation, na.rm = TRUE),
+                                              n = n()) %>%
+                                    mutate(se = sd / sqrt(n),
+                                           lower.ci = randomSeedLimitation_mean_R - qt(1 - (0.05 / 2), n - 1) * se,
+                                           upper.ci = randomSeedLimitation_mean_R + qt(1 - (0.05 / 2), n - 1) * se)
+
+randomSeedLimitation_summary_R$spp <- as.factor(randomSeedLimitation_summary_R$spp)
+names (randomSeedLimitation_summary_R)[1] <- "Species"
+
+
+# now compare observed to expected seed limitation 
+# get just the species you have observed seed limitation values for
+seedsAndSeedlings_all_R <- seedRain_seedLimitationCalcs_trap[seedRain_seedLimitationCalcs_trap$Treatment == "R",]
+seedsAndSeedlings_all_R<- seedsAndSeedlings_all_R[complete.cases(seedsAndSeedlings_all_R[ , 5]),]
+
+# combine with random seed limitation 
+observedRandomCompare_seedLimitation_R <- inner_join(seedsAndSeedlings_all_R, randomSeedLimitation_summary_R, by = "Species")
+observedRandomCompare_seedLimitation_R_final <- observedRandomCompare_seedLimitation_R[,c("Treatment", "Species", "seedLimitation", "randomSeedLimitation_mean_R", "lower.ci", "upper.ci")]
+
+observedRandomCompare_seedLimitation_R_final <- observedRandomCompare_seedLimitation_R_final %>%
+                                              mutate(deltaSeedLimitation_R = seedLimitation-randomSeedLimitation_mean_R)
+
+```
+<br><br>
+
+
+### Make Table S3 which summarizes the observed and expected (from randomization) seed limitation  
+```{r, warning=FALSE}
+# rename  columns for comparisons
+names(observedRandomCompare_seedLimitation_C_final)[3] <- "seedLimitation_observed_C"
+names(observedRandomCompare_seedLimitation_C_final)[5] <- "lower.ci.C"
+names(observedRandomCompare_seedLimitation_C_final)[6] <- "upper.ci.C"
+names(observedRandomCompare_seedLimitation_C_final)[7] <- "deltaSeedLimitation_C"
+names(observedRandomCompare_seedLimitation_I_final)[3] <- "seedLimitation_observed_I"
+names(observedRandomCompare_seedLimitation_I_final)[5] <- "lower.ci.I"
+names(observedRandomCompare_seedLimitation_I_final)[6] <- "upper.ci.I"
+names(observedRandomCompare_seedLimitation_I_final)[7] <- "deltaSeedLimitation_I"
+names(observedRandomCompare_seedLimitation_P_final)[3] <- "seedLimitation_observed_P"
+names(observedRandomCompare_seedLimitation_P_final)[5] <- "lower.ci.P"
+names(observedRandomCompare_seedLimitation_P_final)[6] <- "upper.ci.P"
+names(observedRandomCompare_seedLimitation_P_final)[7] <- "deltaSeedLimitation_P"
+names(observedRandomCompare_seedLimitation_R_final)[3] <- "seedLimitation_observed_R"
+names(observedRandomCompare_seedLimitation_R_final)[5] <- "lower.ci.R"
+names(observedRandomCompare_seedLimitation_R_final)[6] <- "upper.ci.R" 
+names(observedRandomCompare_seedLimitation_R_final)[7] <- "deltaSeedLimitation_R"
+
+observedRandomCompareTable_a <- full_join(observedRandomCompare_seedLimitation_C_final[,c("Species", "seedLimitation_observed_C", "randomSeedLimitation_mean_C", 
+                                                                                          "lower.ci.C", "upper.ci.C", "deltaSeedLimitation_C")], 
+                                          observedRandomCompare_seedLimitation_I_final[,c("Species", "seedLimitation_observed_I", "randomSeedLimitation_mean_I", 
+                                                                                          "lower.ci.I", "upper.ci.I", "deltaSeedLimitation_I")],
+                                                                                          by = "Species") 
+
+observedRandomCompareTable_b <- full_join(observedRandomCompareTable_a, 
+                                          observedRandomCompare_seedLimitation_P_final[,c("Species", "seedLimitation_observed_P", "randomSeedLimitation_mean_P", 
+                                                                                        "lower.ci.P", "upper.ci.P", "deltaSeedLimitation_P")],
+                                                                                        by = "Species")
+
+observedRandomCompareTable_c <- full_join(observedRandomCompareTable_b, 
+                                     observedRandomCompare_seedLimitation_R_final[,c("Species", "seedLimitation_observed_R", "randomSeedLimitation_mean_R", 
+                                                                                     "lower.ci.R", "upper.ci.R", "deltaSeedLimitation_R")],
+                                                                                     by = "Species")
+ 
+TableS3 <- inner_join(observedRandomCompareTable_c, islasTraits, by = "Species")
+```
+<br><br>
+
+
+## Perform establishment randomization procedure described in Appendix S2 
+The procedure described below compares observed to expected (randomized) establishment limitation values  
+<br><br>
+
+### Make seed and seedling occurence matrices for each treatment on a station basis (n = 4 per site)
+```{r, warning=FALSE}  
+# filter for focal species 
+seedsAndSeedlings_forPlotMatrixRando_filter <- seedsAndSeedlings_ByPlot_all %>% 
+                                                filter(Species %in% speciesList_seedlings_tenPercentSeedTreat$Species[speciesList_seedlings_tenPercentSeedTreat$Treatment == "C"] 
+                                                       & Treatment == "C" |
+                                                       Species %in% speciesList_seedlings_tenPercentSeedTreat$Species[speciesList_seedlings_tenPercentSeedTreat$Treatment == "I"] 
+                                                       & Treatment == "I" |
+                                                       Species %in% speciesList_seedlings_tenPercentSeedTreat$Species[speciesList_seedlings_tenPercentSeedTreat$Treatment == "P"] 
+                                                       & Treatment == "P" |
+                                                       Species %in% speciesList_seedlings_tenPercentSeedTreat$Species[speciesList_seedlings_tenPercentSeedTreat$Treatment == "R"] 
+                                                       & Treatment == "R")
+
+# don't consider stations where seedlings a are present but no seeds (perfect STS) following Muscarella et al. 2013
+seedsAndSeedlings_forPlotMatrixRando_filterMus <- seedsAndSeedlings_forPlotMatrixRando_filter %>%
+                                                  mutate(seedSeedling = NA) %>%
+                                                  mutate(seedSeedling=ifelse(present_seeds == 1 & present_seedling == 1, count_seedling, seedSeedling))
+
+seedsAndSeedlings_forPlotMatrixRando_pre <- dcast(seedsAndSeedlings_forPlotMatrixRando_filterMus, 
+                                                  Site + Treatment  + Plot ~ Species, value.var = 'seedSeedling')
+
+# check to see if # of traps matched up for each treatment = good!
+table(seedsAndSeedlings_forPlotMatrixRando_pre$Site, seedsAndSeedlings_forPlotMatrixRando_pre$Treatment)
+
+# drop unexessary columns, make NAs into zeros (plotSpeciesMatrixRando_seedlingConservativeSS)
+seedsAndSeedlings_forPlotMatrixRando_final <- seedsAndSeedlings_forPlotMatrixRando_pre %>%
+                                              dplyr::select(-Site, -Plot) %>% # remove unnecessary columns
+                                              mutate_if(is.numeric, funs(ifelse(is.na(.), 0, .))) # make NAs zeros
+
+# separate into treatments for separate randomizations, drop unnecessary columns, and make NAs into zeros 
+plotSpeciesMatrixRando_establishment_C <- seedsAndSeedlings_forPlotMatrixRando_final %>%
+                                          filter(Treatment == "C") %>%
+                                          dplyr::select(-Treatment)
+
+plotSpeciesMatrixRando_establishment_I <- seedsAndSeedlings_forPlotMatrixRando_final %>%
+                                          filter(Treatment == "I") %>%
+                                          dplyr::select(-Treatment)
+
+plotSpeciesMatrixRando_establishment_P <- seedsAndSeedlings_forPlotMatrixRando_final %>%
+                                          filter(Treatment == "P") %>%
+                                          dplyr::select(-Treatment)
+
+plotSpeciesMatrixRando_establishment_R <- seedsAndSeedlings_forPlotMatrixRando_final %>%
+                                          filter(Treatment == "R") %>%
+                                          dplyr::select(-Treatment)
+```
+<br><br>
+
+
+### Create the matrices you need to do establishment limitation randomizations (both abundance and occurence matrices for each treatment)
+* convert all to occurrence/absence matrices for the random draws  
+```{r}
+# convert to species X abundance matrices from data frames 
+plotSpeciesMatrix_seedling_C_abundance <- as.matrix(plotSpeciesMatrixRando_establishment_C)
+plotSpeciesMatrix_seedling_I_abundance <- as.matrix(plotSpeciesMatrixRando_establishment_I)
+plotSpeciesMatrix_seedling_P_abundance <- as.matrix(plotSpeciesMatrixRando_establishment_P)
+plotSpeciesMatrix_seedling_R_abundance <- as.matrix(plotSpeciesMatrixRando_establishment_R)
+
+# remove species that don't have at least 2 seedlings arriving in each treatment
+plotSpeciesMatrix_seedling_C_abundance_final <- plotSpeciesMatrix_seedling_C_abundance[, !apply(is.na(plotSpeciesMatrix_seedling_C_abundance) | 
+                                                                                               plotSpeciesMatrix_seedling_C_abundance <= 1, 2, all)]
+plotSpeciesMatrix_seedling_I_abundance_final <- plotSpeciesMatrix_seedling_I_abundance[, !apply(is.na(plotSpeciesMatrix_seedling_I_abundance) | 
+                                                                                               plotSpeciesMatrix_seedling_I_abundance <= 1, 2, all)]
+plotSpeciesMatrix_seedling_P_abundance_final <- plotSpeciesMatrix_seedling_P_abundance[, !apply(is.na(plotSpeciesMatrix_seedling_P_abundance) | 
+                                                                                                plotSpeciesMatrix_seedling_P_abundance <= 1, 2, all)]
+plotSpeciesMatrix_seedling_R_abundance_final <- plotSpeciesMatrix_seedling_R_abundance[, !apply(is.na(plotSpeciesMatrix_seedling_R_abundance) | 
+                                                                                                plotSpeciesMatrix_seedling_R_abundance <= 1, 2, all)]
+
+# convert abundance matrix an occurrence/absence matrix for the random draws
+plotSpeciesMatrix_seedling_C_occurrence <- 1*(plotSpeciesMatrix_seedling_C_abundance_final>0)
+sppNames_seedling_C <- colnames(plotSpeciesMatrix_seedling_C_abundance_final)
+plotSpeciesMatrix_seedling_I_occurrence <- 1*(plotSpeciesMatrix_seedling_I_abundance_final>0)
+sppNames_seedling_I <- colnames(plotSpeciesMatrix_seedling_I_abundance_final)
+plotSpeciesMatrix_seedling_P_occurrence <- 1*(plotSpeciesMatrix_seedling_P_abundance_final>0)
+sppNames_seedling_P <- colnames(plotSpeciesMatrix_seedling_P_abundance_final)
+plotSpeciesMatrix_seedling_R_occurrence <- 1*(plotSpeciesMatrix_seedling_R_abundance_final>0)
+sppNames_seedling_R <- colnames(plotSpeciesMatrix_seedling_R_abundance_final)
+```
+<br><br>
+
+
+### Now do randomizations for establishment limitation for each treatment
+The goal here is to determine if the establishment limitation you observed in the field differs from a null model where seeds are Poisson distributed across the traps (Norden et al. 2019 & Muscarella et al. 2013). For each species the approach will be to:  
+* Randomly select n stations  (with replacement) from the observed data for each species. In this case n = the total number of seeds observed for a species (sum of the rows for each column).  
+* Calculate randomized seed limitation for each species and compute 95% confidence intervals over the 1,000 iterations  
+* Compare the randomized and observed limitation  
+<br><br>
+
+
+#### Perform the establishment limitation randomization procedure for each species X treatment combination
+```{r, warning=FALSE}
+# select n stations at random (with replacement) for each species (n = # of seeds observed for a species). Do this 1,000 times and put all the data in a list by species 
+# do this for treatments separately because you have different species arriving up in different treatments
+
+# for controls (natural regeneration)
+RANDO_seedling_C <- list()
+for (i in 1:length(plotSpeciesMatrix_seedling_C_occurrence[1,])){
+name <- paste('item:',i,sep='')
+RANDO_seedling_C[[i]] <- replicate(1000, sample(plotSpeciesMatrix_seedling_C_occurrence[,i], sum(plotSpeciesMatrix_seedling_C_abundance_final[,i]), replace = TRUE))                            
+}
+names(RANDO_seedling_C) <- sppNames_seedling_C                                                                        
+
+# for islands (applied nucleation)
+RANDO_seedling_I <- list()
+for (i in 1:length(plotSpeciesMatrix_seedling_I_occurrence[1,])){
+name <- paste('item:',i,sep='')
+RANDO_seedling_I[[i]] <- replicate(1000, sample(plotSpeciesMatrix_seedling_I_occurrence[,i], sum(plotSpeciesMatrix_seedling_I_abundance_final[,i]), replace = TRUE))                            
+}
+names(RANDO_seedling_I) <- sppNames_seedling_I                                                                        
+
+# for plantations
+RANDO_seedling_P <- list()
+for (i in 1:length(plotSpeciesMatrix_seedling_P_occurrence[1,])){
+name <- paste('item:',i,sep='')
+RANDO_seedling_P[[i]] <- replicate(1000, sample(plotSpeciesMatrix_seedling_P_occurrence[,i], sum(plotSpeciesMatrix_seedling_P_abundance_final[,i]), replace = TRUE))                            
+}
+names(RANDO_seedling_P) <- sppNames_seedling_P                                                                        
+
+# for references
+RANDO_seedling_R <- list()
+for (i in 1:length(plotSpeciesMatrix_seedling_R_occurrence[1,])){
+name <- paste('item:',i,sep='')
+RANDO_seedling_R[[i]] <- replicate(1000, sample(plotSpeciesMatrix_seedling_R_occurrence[,i], sum(plotSpeciesMatrix_seedling_R_abundance_final[,i]), replace = TRUE))                            
+}
+names(RANDO_seedling_R) <- sppNames_seedling_R                                                                        
+```
+<br><br>
+
+
+### Calculate expected (randomized) establishment limitation means and 95% CIs for each species X treatment combination 
+```{r, warning=FALSE}
+##### for controls (natural regeneration)
+RANDO_seedling_C_df <- melt(RANDO_seedling_C) # convert list of random samples to long df
+colnames(RANDO_seedling_C_df) <- c("sample", "iteration", "present", "spp") # name columns 
+
+# calculate randomized establishment limitation for each of the 1,000 iterations for species
+randomEstablishLimitation_calcs_C <- RANDO_seedling_C_df %>%
+                                     group_by(spp, iteration) %>%
+                                     summarize(randomEstablishLimitation = 1-(sum(present)/max(sample))) 
+
+# summarize and calculate 95% CIs 
+randomEstablishLimitation_summary_C <- randomEstablishLimitation_calcs_C %>%
+                                       group_by(spp) %>%
+                                       summarize(randomEstablishLimitation_mean_C = mean(randomEstablishLimitation, na.rm = TRUE),
+                                                  sd = sd(randomEstablishLimitation, na.rm = TRUE),
+                                                  n = n()) %>%
+                                       mutate(se = sd / sqrt(n),
+                                               lower.ci = randomEstablishLimitation_mean_C - qt(1 - (0.05 / 2), n - 1) * se,
+                                               upper.ci = randomEstablishLimitation_mean_C + qt(1 - (0.05 / 2), n - 1) * se)
+
+randomEstablishLimitation_summary_C$spp <- as.factor(randomEstablishLimitation_summary_C$spp)
+names(randomEstablishLimitation_summary_C)[1] <- "Species"
+
+# now compare observed to expected establishment limitation 
+
+# get just the species you have observed seed limitation values for
+seedsAndSeedlings_establish_C <- seedsAndSeedlings_all_finalSeedFilter[seedsAndSeedlings_all_finalSeedFilter$Treatment == "C",]
+
+# combine with random seed limitation 
+observedRandomCompare_establishLimitation_C <- inner_join(seedsAndSeedlings_establish_C, randomEstablishLimitation_summary_C, by = "Species")
+observedRandomCompare_seedlingLimitation_C_final <- observedRandomCompare_establishLimitation_C[,c("Treatment", "Species", "establishLimitation", "randomEstablishLimitation_mean_C", "lower.ci", "upper.ci")]
+
+observedRandomCompare_establishLimitation_C_final <- observedRandomCompare_seedlingLimitation_C_final %>%
+                                                     mutate(deltaEstablishLimitation_C = establishLimitation-randomEstablishLimitation_mean_C)
+
+#--------
+##### for islands (applied nucleation)
+RANDO_seedling_I_df <- melt(RANDO_seedling_I) # convert list of random samples to long df
+colnames(RANDO_seedling_I_df) <- c("sample", "iteration", "present", "spp") # name columns 
+
+# calculate randomized establishment limitation for each of the 1,000 iterations for species
+randomEstablishLimitation_calcs_I <- RANDO_seedling_I_df %>%
+                                     group_by(spp, iteration) %>%
+                                     summarize(randomEstablishLimitation = 1-(sum(present)/max(sample)))
+
+# summarize and calculate 95% CIs 
+randomEstablishLimitation_summary_I <- randomEstablishLimitation_calcs_I %>%
+                                       group_by(spp) %>%
+                                       summarize(randomEstablishLimitation_mean_I = mean(randomEstablishLimitation, na.rm = TRUE),
+                                                  sd = sd(randomEstablishLimitation, na.rm = TRUE),
+                                                  n = n()) %>%
+                                       mutate(se = sd / sqrt(n),
+                                               lower.ci = randomEstablishLimitation_mean_I - qt(1 - (0.05 / 2), n - 1) * se,
+                                               upper.ci = randomEstablishLimitation_mean_I + qt(1 - (0.05 / 2), n - 1) * se)
+
+randomEstablishLimitation_summary_I$spp <- as.factor(randomEstablishLimitation_summary_I$spp)
+names(randomEstablishLimitation_summary_I)[1] <- "Species"
+
+# now compare observed to expected establishment limitation 
+
+# get just the species you have observed seed limitation values for
+seedsAndSeedlings_establish_I <- seedsAndSeedlings_all_finalSeedFilter[seedsAndSeedlings_all_finalSeedFilter$Treatment == "I",]
+
+# combine with random seed limitation 
+observedRandomCompare_establishLimitation_I <- inner_join(seedsAndSeedlings_establish_I, randomEstablishLimitation_summary_I, by = "Species")
+observedRandomCompare_seedlingLimitation_I_final <- observedRandomCompare_establishLimitation_I[,c("Treatment", "Species", "establishLimitation", "randomEstablishLimitation_mean_I", "lower.ci", "upper.ci")]
+
+observedRandomCompare_establishLimitation_I_final <- observedRandomCompare_seedlingLimitation_I_final %>%
+                                                     mutate(deltaEstablishLimitation_I = establishLimitation-randomEstablishLimitation_mean_I)
+
+
+#--------
+##### for plantations
+RANDO_seedling_P_df <- melt(RANDO_seedling_P) # convert list of random samples to long df
+colnames(RANDO_seedling_P_df) <- c("sample", "iteration", "present", "spp") # name columns 
+
+# calculate randomized establishment limitation for each of the 1,000 iterations for species
+randomEstablishLimitation_calcs_P <- RANDO_seedling_P_df %>%
+                                     group_by(spp, iteration) %>%
+                                     summarize(randomEstablishLimitation = 1-(sum(present)/max(sample))) 
+
+# summarize and calculate 95% CIs 
+randomEstablishLimitation_summary_P <- randomEstablishLimitation_calcs_P %>%
+                                       group_by(spp) %>%
+                                       summarize(randomEstablishLimitation_mean_P = mean(randomEstablishLimitation, na.rm = TRUE),
+                                                  sd = sd(randomEstablishLimitation, na.rm = TRUE),
+                                                  n = n()) %>%
+                                       mutate(se = sd / sqrt(n),
+                                               lower.ci = randomEstablishLimitation_mean_P - qt(1 - (0.05 / 2), n - 1) * se,
+                                               upper.ci = randomEstablishLimitation_mean_P + qt(1 - (0.05 / 2), n - 1) * se)
+
+randomEstablishLimitation_summary_P$spp <- as.factor(randomEstablishLimitation_summary_P$spp)
+names(randomEstablishLimitation_summary_P)[1] <- "Species"
+
+# now compare observed to expected establishment limitation 
+
+# get just the species you have observed seed limitation values for
+seedsAndSeedlings_establish_P <- seedsAndSeedlings_all_finalSeedFilter[seedsAndSeedlings_all_finalSeedFilter$Treatment == "P",]
+
+# combine with random seed limitation 
+observedRandomCompare_establishLimitation_P <- inner_join(seedsAndSeedlings_establish_P, randomEstablishLimitation_summary_P, by = "Species")
+observedRandomCompare_seedlingLimitation_P_final <- observedRandomCompare_establishLimitation_P[,c("Treatment", "Species", "establishLimitation", "randomEstablishLimitation_mean_P", "lower.ci", "upper.ci")]
+
+observedRandomCompare_establishLimitation_P_final <- observedRandomCompare_seedlingLimitation_P_final %>%
+                                                     mutate(deltaEstablishLimitation_P = establishLimitation-randomEstablishLimitation_mean_P)
+
+#--------
+##### for references
+RANDO_seedling_R_df <- melt(RANDO_seedling_R) # convert list of random samples to long df
+colnames(RANDO_seedling_R_df) <- c("sample", "iteration", "present", "spp") # name columns 
+
+# calculate randomized establishment limitation for each of the 1,000 iterations for species
+randomEstablishLimitation_calcs_R <- RANDO_seedling_R_df %>%
+                                     group_by(spp, iteration) %>%
+                                     summarize(randomEstablishLimitation = 1-(sum(present)/max(sample))) 
+
+# summarize and calculate 95% CIs 
+randomEstablishLimitation_summary_R <- randomEstablishLimitation_calcs_R %>%
+                                       group_by(spp) %>%
+                                       summarize(randomEstablishLimitation_mean_R = mean(randomEstablishLimitation, na.rm = TRUE),
+                                                  sd = sd(randomEstablishLimitation, na.rm = TRUE),
+                                                  n = n()) %>%
+                                       mutate(se = sd / sqrt(n),
+                                               lower.ci = randomEstablishLimitation_mean_R - qt(1 - (0.05 / 2), n - 1) * se,
+                                               upper.ci = randomEstablishLimitation_mean_R + qt(1 - (0.05 / 2), n - 1) * se)
+
+randomEstablishLimitation_summary_R$spp <- as.factor(randomEstablishLimitation_summary_R$spp)
+names(randomEstablishLimitation_summary_R)[1] <- "Species"
+
+# now compare observed to expected establishment limitation 
+
+# get just the species you have observed seed limitation values for
+seedsAndSeedlings_establish_R <- seedsAndSeedlings_all_finalSeedFilter[seedsAndSeedlings_all_finalSeedFilter$Treatment == "R",]
+
+# combine with random seed limitation 
+observedRandomCompare_establishLimitation_R <- inner_join(seedsAndSeedlings_establish_R, randomEstablishLimitation_summary_R, by = "Species")
+observedRandomCompare_seedlingLimitation_R_final <- observedRandomCompare_establishLimitation_R[,c("Treatment", "Species", "establishLimitation", "randomEstablishLimitation_mean_R", "lower.ci", "upper.ci")]
+
+observedRandomCompare_establishLimitation_R_final <- observedRandomCompare_seedlingLimitation_R_final %>%
+                                                     mutate(deltaEstablishLimitation_R = establishLimitation-randomEstablishLimitation_mean_R)
+```
+<br><br>
+
+
+### Make Table 2 which summarizes the observed and expected (from randomization) establishment limitation 
+```{r, warning=FALSE}
+names(observedRandomCompare_establishLimitation_C_final)[3] <- "establishLimitation_observed_C"
+names(observedRandomCompare_establishLimitation_C_final)[5] <- "lower.ci.C"
+names(observedRandomCompare_establishLimitation_C_final)[6] <- "upper.ci.C"
+names(observedRandomCompare_establishLimitation_C_final)[7] <- "deltaEstablishLimitation_C"
+names(observedRandomCompare_establishLimitation_I_final)[3] <- "establishLimitation_observed_I"
+names(observedRandomCompare_establishLimitation_I_final)[5] <- "lower.ci.I"
+names(observedRandomCompare_establishLimitation_I_final)[6] <- "upper.ci.I"
+names(observedRandomCompare_establishLimitation_I_final)[7] <- "deltaEstablishLimitation_I"
+names(observedRandomCompare_establishLimitation_P_final)[3] <- "establishLimitation_observed_P"
+names(observedRandomCompare_establishLimitation_P_final)[5] <- "lower.ci.P"
+names(observedRandomCompare_establishLimitation_P_final)[6] <- "upper.ci.P"
+names(observedRandomCompare_establishLimitation_P_final)[7] <- "deltaEstablishLimitation_P"
+names(observedRandomCompare_establishLimitation_R_final)[3] <- "establishLimitation_observed_R"
+names(observedRandomCompare_establishLimitation_R_final)[5] <- "lower.ci.R"
+names(observedRandomCompare_establishLimitation_R_final)[6] <- "upper.ci.R" 
+names(observedRandomCompare_establishLimitation_R_final)[7] <- "deltaEstablishLimitation_R"
+
+establishTable_a <- full_join(observedRandomCompare_establishLimitation_C_final[,c("Species", "establishLimitation_observed_C", "randomEstablishLimitation_mean_C", 
+                                                                                    "lower.ci.C", "upper.ci.C", "deltaEstablishLimitation_C")], 
+                              observedRandomCompare_establishLimitation_I_final[,c("Species", "establishLimitation_observed_I", "randomEstablishLimitation_mean_I", 
+                                                                                    "lower.ci.I", "upper.ci.I", "deltaEstablishLimitation_I")],
+                                                                                by = "Species") 
+
+establishTable_b <- full_join(establishTable_a, 
+                              observedRandomCompare_establishLimitation_P_final[,c("Species", "establishLimitation_observed_P", "randomEstablishLimitation_mean_P", 
+                                                                                    "lower.ci.P", "upper.ci.P", "deltaEstablishLimitation_P")],
+                                                                                by = "Species")
+
+establishTable_c <- full_join(establishTable_b, 
+                             observedRandomCompare_establishLimitation_R_final[,c("Species", "establishLimitation_observed_R", "randomEstablishLimitation_mean_R", 
+                                                                                    "lower.ci.R", "upper.ci.R", "deltaEstablishLimitation_R")],
+                                                                               by = "Species")
+ 
+Table2 <- inner_join(establishTable_c, islasTraits, by = "Species")
+```
+<br><br>
+
+
+### Compare delta Establishment Limitation between treatments, successional stage, and seed size
+* Do one-way ANOVAs on mixed effects linear regressions  
+* Make Figure 2 panels A-C  
+```{r, warning=FALSE}
+establishLimit_a <-  full_join(observedRandomCompare_establishLimitation_C_final[,c("Species", "deltaEstablishLimitation_C")], 
+                                observedRandomCompare_establishLimitation_I_final[,c("Species", "deltaEstablishLimitation_I")],
+                                by = "Species")
+
+establishLimit_b <-  full_join(establishLimit_a, 
+                               observedRandomCompare_establishLimitation_P_final[,c("Species", "deltaEstablishLimitation_P")],
+                               by = "Species")
+
+establishLimit_c <-  full_join(establishLimit_b, 
+                               observedRandomCompare_establishLimitation_R_final[,c("Species", "deltaEstablishLimitation_R")],
+                               by = "Species")
+
+establishLimitAnalysis <- inner_join(establishLimit_c, islasTraits, by = "Species")
+establishLimitAnalysis$SeedSize <- as.factor(establishLimitAnalysis$SeedSize)
+establishLimitAnalysis$SuccessionalStage[establishLimitAnalysis$Species=="ERY_POE"] <- "Early" # make ERY_POE early successional
+
+# convert to long format for analysis and plotting 
+establishLimitAnalysis_final <- melt(establishLimitAnalysis)
+names(establishLimitAnalysis_final)[9] <- "Treatment"
+names(establishLimitAnalysis_final)[10] <- "deltaEstablishmentLimitation"
+establishLimitAnalysis_final$Treatment <- as.character(establishLimitAnalysis_final$Treatment)
+establishLimitAnalysis_final$Treatment[establishLimitAnalysis_final$Treatment=="deltaSeedlingLimitation_C"] <- "C"
+establishLimitAnalysis_final$Treatment[establishLimitAnalysis_final$Treatment=="deltaSeedlingLimitation_I"] <- "I"
+establishLimitAnalysis_final$Treatment[establishLimitAnalysis_final$Treatment=="deltaSeedlingLimitation_P"] <- "P"
+establishLimitAnalysis_final$Treatment[establishLimitAnalysis_final$Treatment=="deltaSeedlingLimitation_R"] <- "R"
+establishLimitAnalysis_final$Treatment <- as.factor(establishLimitAnalysis_final$Treatment)
+establishLimitAnalysis_final$Species <- as.factor(establishLimitAnalysis_final$Species)
+
+# make clean seed size categories for plotting
+establishLimitAnalysis_final <- establishLimitAnalysis_final %>%
+                                 mutate(seedSizeCat="NA") %>% 
+                                 mutate(seedSizeCat = ifelse(SeedSize == "1", "<5 mm", seedSizeCat)) %>% 
+                                 mutate(seedSizeCat = ifelse(SeedSize == "2" |SeedSize == "3" | SeedSize == "4", "\u22655 mm", seedSizeCat)) 
+
+
+#-----
+# first examine delta Establishment Limitation by treatment
+
+# build mixed-effects linear model of deltaEstablishmentLimitation by treatment (species ran. eff.)
+modEstablish_treatment_mixed <- lmer(deltaEstablishmentLimitation ~ Treatment  + (1|Species), establishLimitAnalysis_final)
+
+# check assumptions (commented out for brevity) -- met 
+# plot(modEstablish_treatment_mixed # residuals OK, 
+# qqnorm(residuals(modEstablish_treatment_mixed)) #QQ plot not perfect but OK, log transform = same result so going no transform
+
+# one-way Anova testing deltaEstablishmentLimit differences b/w treatments 
+# no differences detected 
+Anova(modEstablish_treatment_mixed, type = "II")
+
+# color-blind friendly color palette for plotting 
+CB_YlGnBu <- c("#ffffcc", "#a1dab4", "#41b6c4", "#225ea8")
+
+# plot the deltaEstablish by treatment  
+# no treatment differences so no compact letter display necessary
+fig2A <- ggboxplot(establishLimitAnalysis_final,
+                    x = "Treatment", 
+                    y = "deltaEstablishmentLimitation", 
+                    fill = "Treatment", 
+                    palette =CB_YlGnBu,
+                    shape = "Treatment", 
+                    xlab = "Treatment", 
+                    ylab = expression(delta["establishment"]),
+                    legend = "none")+ 
+                   theme(axis.title.y =  element_text(face = "bold", size = 16))+
+                   scale_x_discrete(labels = c("NR", "AN", "P", "R"))
+fig2A
+
+#------
+# Examine delta Establishment Limitation by successional stage
+
+# build mixed-effects linear model of deltaEstablishmentLimitation by treatment (species ran. eff.)
+modEstablish_treatment_mixed <- lmer(deltaEstablishmentLimitation ~ Treatment  + (1|Species), establishLimitAnalysis_final)
+
+# check assumptions (commented out for brevity) -- assumptions met 
+# plot(modEstablish_treatment_mixed) # residuals OK, 
+# qqnorm(residuals(modEstablish_treatment_mixed)) #QQ plot not perfect but OK, log transform = same result so going no transform
+
+# one-way Anova testing deltaEstablishmentLimit differences b/w treatments 
+# no differences detected 
+Anova(modEstablish_treatment_mixed, type = "II")
+
+
+# make the model of delta establish and successional stage (only for early/late categories)
+modEstablish_succession_mixed <- lmer(deltaEstablishmentLimitation  ~ SuccessionalStage  + (1|Species), 
+                                      subset(establishLimitAnalysis_final, SuccessionalStage == "Early" | SuccessionalStage == "Late"))
+
+
+# check assumptions (commented out for brevity) -- assumptions met 
+# plot(modEstablish_succession_mixed) # residuals OK, 
+# qqnorm(residuals(modEstablish_succession_mixed)) #QQ plot not perfect but OK, log transform = same result so going no transform
+
+# one-way Anova testing deltaEstablishmentLimit differences b/w successional status 
+Anova(modEstablish_succession_mixed, type = "II")
+
+# significant ANOVA, do pairwise differences -- late much lower than early 
+emmeans(modEstablish_succession_mixed, pairwise ~ SuccessionalStage)
+
+# make CLD for figure
+successsional_sig <- c("a", "b")
+
+# combine with the upper quantile of each of the boxes to label in the same place on figure
+# example: https://stackoverflow.com/questions/44712185/tukeys-post-hoc-on-ggplot-boxplot
+yvalue_succ <- subset(establishLimitAnalysis_final, SuccessionalStage == "Early" | SuccessionalStage == "Late") %>%
+                      group_by(SuccessionalStage) %>%
+                      summarize(deltaEstablishmentLimitation = quantile(deltaEstablishmentLimitation, 0.75, na.rm = TRUE))
+final_succ <- yvalue_succ
+final_succ$successsional_sig <- successsional_sig
+
+# create successional stage palette
+SuccStagePalette <- c( "#edf8fb", "#006d2c")
+
+# differences between successional stage and establish limitation 
+fig2B <- ggboxplot(subset(establishLimitAnalysis_final, SuccessionalStage == "Early" | SuccessionalStage == "Late"),
+                    x = "SuccessionalStage", 
+                    y = "deltaEstablishmentLimitation", 
+                    fill = "SuccessionalStage", 
+                    palette =SuccStagePalette,
+                    shape = "SuccStagePalette", 
+                    xlab = "Successional Stage", 
+                    ylab = expression(delta["establishment"]),
+                    legend = "none")+ 
+                    theme(axis.title.y =  element_text(face = "bold", size = 16))+
+                    geom_text(data = final_succ, 
+                              aes(x = SuccessionalStage, y = deltaEstablishmentLimitation, label = successsional_sig),
+                              vjust=-.45,
+                              hjust=-.28, 
+                              fontface = "bold", 
+                              size = 5)
+fig2B
+
+#-----
+# Last, compare delta Establishment Limitation by seed size 
+
+# make the model of delta establish and seed size categories 
+modSeedSize_mixed <- lmer(deltaEstablishmentLimitation  ~ seedSizeCat + (1|Species), establishLimitAnalysis_final)
+
+# check assumptions (commented out for brevity) -- assumptions met 
+# plot(modSeedSize_mixed) # residuals OK, 
+# qqnorm(residuals(modSeedSize_mixed)) #QQ plot not perfect but OK, log transform = same result so going no transform
+
+# one-way Anova testing deltaEstablishmentLimit differences b/w seed sizes 
+Anova(modSeedSize_mixed, type = "II")
+
+# significant ANOVA, do pairwise differences -- large much lower than small 
+emmeans(modSeedSize_mixed, pairwise ~ seedSizeCat)
+
+# make CLD for figure
+seed_sig <- c("a", "b")
+
+# combine with the upper quantile of each of the boxes to label in the same place on figure
+# example: https://stackoverflow.com/questions/44712185/tukeys-post-hoc-on-ggplot-boxplot
+yvalue_seed <- establishLimitAnalysis_final %>%
+                group_by(seedSizeCat) %>%
+                summarize(deltaEstablishmentLimitation = quantile(deltaEstablishmentLimitation, 0.75, na.rm = TRUE))
+final_seed <- yvalue_seed
+final_seed$seed_sig <- seed_sig
+
+# create seed size palette
+SSpalette <- c("#fe9929", "#d95f0e")
+
+# make clean seed size categories for plotting
+establishLimitAnalysis_final <- establishLimitAnalysis_final %>%
+                                 mutate(seedSizeCat="NA") %>% 
+                                 mutate(seedSizeCat = ifelse(SeedSize == "1", "<5 mm", seedSizeCat)) %>% 
+                                 mutate(seedSizeCat = ifelse(SeedSize == "2" |SeedSize == "3" | SeedSize == "4", "\u22655 mm", seedSizeCat)) 
+
+# no differences between establish limit and seed size seed size 
+fig2C <- ggboxplot(establishLimitAnalysis_final,
+                    x = "seedSizeCat", 
+                    y = "deltaEstablishmentLimitation", 
+                    fill = "seedSizeCat", 
+                    palette =SSpalette,
+                    shape = "seedSizeCat", 
+                    xlab = "Seed Size", 
+                    ylab = expression(delta["establishment"]),
+                    legend = "none")+ 
+                   theme(axis.title.y =  element_text(face = "bold", size = 16))+ 
+                   geom_text(data = final_seed, 
+                            aes(x = seedSizeCat, y = deltaEstablishmentLimitation, label = seed_sig),
+                            vjust=-.45,
+                            hjust=-.28, 
+                            fontface = "bold", 
+                            size = 5)
+fig2C
+```
+<br><br>
+
+
+### Compare observed seed limitation between treatments (normalized by reference forest values)
+* Calculate seed limitation values in each of the experimental treatments normalized by the values for the reference forests for each of the animal-dispersed focal species (seed limitation<sub>ref</sub>)  
+* Test for seed limitation<sub>ref</sub> among restoration treatments using mixed-effects one-way ANOVA (species ran.)  
+```{r, warning = FALSE}
+seedLimitObserved <- TableS3[,c("Species", "seedLimitation_observed_C", "seedLimitation_observed_I",
+                               "seedLimitation_observed_P", "seedLimitation_observed_R", 
+                               "Dispersalmode")]
+
+#### ----  now look at differences from ref
+observedRefDiff_calcs <- seedLimitObserved %>%
+                          mutate(diff_C = seedLimitation_observed_C - seedLimitation_observed_R) %>%
+                          mutate(diff_I = seedLimitation_observed_I - seedLimitation_observed_R) %>%
+                          mutate(diff_P = seedLimitation_observed_P - seedLimitation_observed_R) %>%
+                          dplyr::select(-seedLimitation_observed_C, 
+                                        -seedLimitation_observed_I, 
+                                        -seedLimitation_observed_P, 
+                                        -seedLimitation_observed_R)
+
+# melt and calculate diff from reference
+observedRefDiff_analysis <- melt(observedRefDiff_calcs)
+names(observedRefDiff_analysis)[3] <- "Treatment"
+names(observedRefDiff_analysis)[4] <- "observedSeedLimit"
+observedRefDiff_analysis$Treatment <- as.character(observedRefDiff_analysis$Treatment)
+observedRefDiff_analysis$Treatment[observedRefDiff_analysis$Treatment=="diff_C"] <- "C"
+observedRefDiff_analysis$Treatment[observedRefDiff_analysis$Treatment=="diff_I"] <- "I"
+observedRefDiff_analysis$Treatment[observedRefDiff_analysis$Treatment=="diff_P"] <- "P"
+observedRefDiff_analysis$Treatment[observedRefDiff_analysis$Treatment=="diff_R"] <- "R"
+observedRefDiff_analysis$Treatment <- as.factor(observedRefDiff_analysis$Treatment)
+observedRefDiff_analysis$Species <- as.factor(observedRefDiff_analysis$Species)
+
+##  anovas 
+observedMod_Treatment_refDiff_mixed <- lmer(observedSeedLimit~Treatment + (1|Species), subset(observedRefDiff_analysis, Dispersalmode == "ZOO"))
+Anova(observedMod_Treatment_refDiff_mixed, type = "II")
+obsSS.emm <- emmeans(observedMod_Treatment_refDiff_mixed, pairwise ~ Treatment)
+CLD(obsSS.emm)
+
+# make CLD for figure
+obsTreat_sig <- c("a", "b", "ab")
+
+# plot the seed limitation as just mean bars instead
+plot.obsSS.emm <- tidy(obsSS.emm$emmeans)
+
+fig2D <- ggbarplot(plot.obsSS.emm,
+                      x = "Treatment", 
+                      y = "estimate", 
+                      fill = "Treatment", 
+                      palette =CB_YlGnBu,
+                      xlab = "Treatment", 
+                      ylab = expression("Observed seed limitation"["ref"]),
+                      legend = "none")+
+                      geom_errorbar(aes(ymin=estimate-std.error, ymax=estimate+std.error),
+                                     width=.2,                    # Width of the error bars
+                                     position=position_dodge(.9))+
+                      geom_text(aes(x = Treatment, y = estimate, label = obsTreat_sig),
+                                vjust=-.45,
+                                hjust=-.28, 
+                                fontface = "bold", 
+                                size = 5)+
+                      scale_x_discrete(labels = c("NR", "AN", "P"))
+fig2D
+```
+<br><br>
+
+
+### Make figure 2
+* Combine panels to make Figure 2   
+```{r, warning=FALSE}
+Figure2 <- ggarrange(fig2A, fig2B, fig2C, fig2D, labels = c("A)", "B)", "C)", "D)"), ncol = 2, nrow = 2)
+Figure2
+ggsave("Figure2.pdf", width = 8, height = 8, units = "in", dpi = 600, device = cairo_pdf)
+```
+<br><br>
+
+
+## Seed-to-seedling transition modeling -- answering Question 1 in manuscript
+The following models the STS (seed-to-seedling) transition across the treatments using a Bayesian regression approach  
+<br><br>
+
+### Organize seed and seedling data on 'station' level STS modeling  
+* Data are filtered to only include species that occurred at >=10% of stations on a treatment basis as with Q2 randomizations   
+* Final modeling data frame "seedsAndSeedlings_forModeling_final" includes all predictors used for modeling (e.g., restoration treatments, seed size, percent canopy cover, dispersal syndrome) as well as seed deposition scaled to whole plot area as with establishment limitation calculations to use as offset when predicting rates of STS  
+```{r, warning=FALSE}
+# seed rain organize at station level
+seedRain_All_byTreat_model <- seedrainWorking %>% 
+                              # only use trees
+                              filter(Growthform %in% c("CT", "UT")) %>%
+                              # group by Site, Treatment, island size (Isize), Station (plot), and Species 
+                              group_by(Site, Treatment, Isize, Plot, Species) %>% 
+                              # sum seeds at station level 
+                              summarize(seedsSum=sum(SR, na.rm = TRUE)) %>%
+                              # create presence absence seed column 
+                              mutate(present = ifelse(seedsSum>0, "1", "0"))
+
+seedRain_All_byTreat_model$present <- as.numeric(seedRain_All_byTreat_model$present)
+
+# seedlings organize at station level 
+seedlingsAll_byTreat_model <- recruitmentWorking %>%
+                              # only use trees
+                              filter(Growthform %in% c("CT", "UT")) %>% 
+                              filter(site %in% c("BB", "EC", "JG", "MM", "SG")) %>% # only use sites where SR was monitored continuously 
+                              filter(isz %in% c(NA, "M", "L")) %>% # remove small island sampling plots where seed traps were not placed
+                              # only include years where seed traps were sampled
+                              filter(year %in% c("2014", "2015", "2016", "2017")) %>% 
+                              # group by Site, Treatment, island size (Isize), Station (plot), and Species 
+                              group_by(site, treat, isz, FQ, spec) %>%
+                              # sum seedlings at station level
+                              summarize(count = n()) %>% 
+                              # create presence absence seedling column 
+                              mutate(present = as.numeric(ifelse(count>0, "1", "0")))
+
+seedlingsAll_byTreat_model <- droplevels(seedlingsAll_byTreat_model)
+
+# rename columns for combination of seeds and seedlings
+names(seedlingsAll_byTreat_model)[1] <- "Site"
+names(seedlingsAll_byTreat_model)[2] <- "Treatment"
+names(seedlingsAll_byTreat_model)[3] <- "Isize"
+names(seedlingsAll_byTreat_model)[5] <- "Species"
+names(seedlingsAll_byTreat_model)[4] <- "Plot"
+names(seedlingsAll_byTreat_model)[6] <- "count_seedling"
+names(seedlingsAll_byTreat_model)[7] <- "present_seedling"
+names(seedRain_All_byTreat_model)[7] <- "present_seeds"
+
+# join seeds and seedlings
+seedsAndSeedlings_ByPlot_all <- full_join(seedRain_All_byTreat_model, seedlingsAll_byTreat_model, by = c("Site", "Treatment", "Isize", "Plot", "Species"))
+seedsAndSeedlings_ByPlot_all <- as.data.frame(seedsAndSeedlings_ByPlot_all)
+seedsAndSeedlings_ByPlot_all$Species <- as.factor(seedsAndSeedlings_ByPlot_all$Species)
+
+# convert all NAs to 0 for present_seeds, count_seedling, and present_seedling
+seedsAndSeedlings_ByPlot_all$present_seeds[is.na(seedsAndSeedlings_ByPlot_all$present_seeds)] <- 0
+seedsAndSeedlings_ByPlot_all$count_seedling[is.na(seedsAndSeedlings_ByPlot_all$count_seedling)] <- 0
+seedsAndSeedlings_ByPlot_all$present_seedling[is.na(seedsAndSeedlings_ByPlot_all$present_seedling)] <- 0
+
+#------
+# make final df for models "seedsAndSeedlings_forModeling" 
+# data are filtered to only include species that occured at >=10% of stations on a treatment basis as with randomizations
+# this df also includes seed deposition scaled to whole plot area as with establishment limitation calculations 
+seedsAndSeedlings_forModeling <- seedsAndSeedlings_ByPlot_all %>% 
+                                # only use species occuring as seed in >=10% of stations on a treatment basis
+                                filter(Species %in% speciesList_seedlings_tenPercentSeedTreat$Species[speciesList_seedlings_tenPercentSeedTreat$Treatment == "C"] & Treatment == "C" |
+                                Species %in% speciesList_seedlings_tenPercentSeedTreat$Species[speciesList_seedlings_tenPercentSeedTreat$Treatment == "I"] & Treatment == "I" |
+                                Species %in% speciesList_seedlings_tenPercentSeedTreat$Species[speciesList_seedlings_tenPercentSeedTreat$Treatment == "P"] & Treatment == "P" |
+                                Species %in% speciesList_seedlings_tenPercentSeedTreat$Species[speciesList_seedlings_tenPercentSeedTreat$Treatment == "R"] & Treatment == "R") %>% 
+                                # create column for seed/seedling presence = 1 when both seeds/seeldings present, or just seedlings present 
+                                # this removes instances where there are seedings but no seeds (sensu Muscarella et al. 2013) 
+                                mutate(filteringCat = ifelse(present_seeds == 1 & present_seedling == 1 | present_seeds == 1 & present_seedling == 0, 1, 0)) %>%
+                                # use only species occuring as both seeds/seedling
+                                filter(filteringCat == 1) %>%
+                                # scale the seeds up to make plots comparable
+                                mutate(seedsSum_scaled = NA) %>% 
+                                # 10.67x larger area than traps in controls, plantation, reference
+                                mutate(seedsSum_scaled = ifelse(Treatment == "C" | Treatment == "P" | Treatment == "R", (seedsSum*10.67), seedsSum_scaled)) %>% 
+                                # 13.33x larger area in medium islands
+                                mutate(seedsSum_scaled = ifelse(Treatment == "I" & Isize == "M", (seedsSum*13.33), seedsSum_scaled)) %>% 
+                                # 16x larger area in medium islands in large islands
+                                mutate(seedsSum_scaled = ifelse(Treatment == "I" & Isize == "L", (seedsSum*16), seedsSum_scaled))
+
+#-----
+# add vegetation cover and species trait data
+# join with vegetation data
+seedsAndSeedlings_forModeling_vegData <- inner_join(seedsAndSeedlings_forModeling, vegStructureSummary, by = c("Site", "Treatment", "Plot"))
+# join with trait data
+seedsAndSeedlings_forModeling_final <- inner_join(seedsAndSeedlings_forModeling_vegData, islasTraits, by = "Species")
+# fix data types
+seedsAndSeedlings_forModeling_final$Site <- as.factor(seedsAndSeedlings_forModeling_final$Site)
+seedsAndSeedlings_forModeling_final$Species <- as.factor(seedsAndSeedlings_forModeling_final$Species)
+seedsAndSeedlings_forModeling_final$seedsSum <- as.numeric(seedsAndSeedlings_forModeling_final$seedsSum)
+seedsAndSeedlings_forModeling_final$SeedSize <- as.factor(seedsAndSeedlings_forModeling_final$SeedSize)
+
+
+# recode seed size to put larger categories into category "2" -- So, "1" = <5mm; "2" = >=5mm
+seedsAndSeedlings_forModeling_final$SeedSize[seedsAndSeedlings_forModeling_final$SeedSize == "3" | 
+                                                                 seedsAndSeedlings_forModeling_final$SeedSize == "4"] <- "2"
+seedsAndSeedlings_forModeling_final <- droplevels(seedsAndSeedlings_forModeling_final)
+
+```
+<br><br>
+
+
+### Standardization and treatment leveling
+* Standardizes continuous predictors (percent canopy cover) using z-transformation   
+* Code reference forests, wind-dispersed seeds, and seeds <5 mm as first levels of factors so coefficients will be reported relative to those factor levels.  
+```{r}
+# standardize percent canopy cover meaurements
+seedsAndSeedlings_forModeling_final_standard <- seedsAndSeedlings_forModeling_final
+seedsAndSeedlings_forModeling_final_standard$meanCover <- with(seedsAndSeedlings_forModeling_final_standard, (meanCover - mean(meanCover))/(2*sd(meanCover)))
+
+# make the the referen the "dummy" or "reference" level
+seedsAndSeedlings_forModeling_final_standard$Treatment_Ref <- relevel(seedsAndSeedlings_forModeling_final_standard$Treatment, ref=4)
+```
+<br><br>
+
+
+### Fit the full STS model with all predictors 
+The code below implements the Bayesian hierarchical regression for the STS model as explained in the manuscript: We built a generalized linear mixed-model using the number of seedling recruits at a sampling station as the response. We included the log of seeds that arrived at a station as an offset, which directly models the STS as the rate of seedlings recruiting at a sampling station per the number of seeds arriving at that station (Muscarella et al. 2013). Experimental treatments (natural regeneration, applied nucleation, plantation, reference forest), mean % canopy cover at sampling stations, and the life-history traits of each species (dispersal syndrome, seed size) were included as fixed effects predictors. Species and site were included as random effects.    
+
+Additional information on approach to model fitting from the manuscript: In initial STS models, we used a Poisson error distribution and residuals were overdispersed. We also determined that the seedling recruit data were zero-inflated (see score-test below). To account for this in the final models we used a zero-inflated logit distribution to account for excess zeros and a negative binomial error distribution to model seed-to-seedling transitions. All coefficients were estimated using non-informative priors with Stan in R.The model converged with R-hat values <=1.01 for all parameters. We considered individual predictors as significant if the 95% credible intervals of an estimated coefficient did not overlap zero.  
+```{r}
+#----
+# first check assumptions for choice of distributions  
+# test for zero-inflation with score test shows seedling data are highly zero inflated = used zero-inflated error dist. 
+zero.test(seedsAndSeedlings_forModeling_final_standard$count_seedling)
+
+# histogram and box plot indicates zero-inflation and over-dispersion (clumped observations)
+# likely poisson is not best choice but compare zero-inflated poisson with zero-inflated negative binomial below 
+#hist(seedsAndSeedlings_forModeling_final_standard$count_seedling)  
+#boxplot(seedsAndSeedlings_forModeling_final_standard$count_seedling, horizontal=TRUE)
+#rug(jitter(seedsAndSeedlings_forModeling_final_standard$count_seedling))
+
+#--- 
+# set Stan parameters for modeling
+# specify C++14 standard to compile Stan programs
+Sys.setenv(USE_CXX14 = 1)
+
+# run fits in parallel
+rstan_options(auto_write = TRUE)
+options(mc.cores = parallel::detectCores())
+
+#---
+# fit full model with all predictors: zero-inflated poisson error dist. 
+poissonZI_STS <- brm(count_seedling ~ Treatment_Ref + meanCover + Dispersalmode + SeedSize + 
+                                           offset(log(seedsSum)) + (1| Species) + (1|Site), # STS as the rate of recruits/seeds at station 
+                                           data = seedsAndSeedlings_forModeling_final_standard, 
+                                           family = zero_inflated_poisson(link = "log", link_zi = "logit"), # using zero-inflated poisson
+                                           prior = c(set_prior("normal(0, 1e6)", class = "b"), # non-informative priors for predictors
+                                           set_prior("normal(0, 1e6)", class = "Intercept")), # non-informative priors for intercept
+                                           control = list(adapt_delta = .99) # decrease divergent transitions
+                                           )
+
+# Warnings: possible fit issue indicated, 47 transitions exceed max. treedepth when first run
+# summary -- all converged @ R-hat = 1 except for seedSize = 1.01 ...not ideal, compare with negative binomial error dist. below
+summary(poissonZI_STS)
+# visually check posterior samples - chains not particularly well mixed (commented out below to run knit pdf)
+#launch_shinystan(poissonZI_STS)
+
+
+#--- 
+# fit full model with all predictors: zero-inflated negative binomial error dist. 
+finalModSTS_forFigS2 <- brm(count_seedling ~ Treatment_Ref + meanCover + Dispersalmode + SeedSize + 
+                            offset(log(seedsSum)) + (1|Species) + (1|Site), # model STS as the rate of recruits/seeds at a station with all predictors
+                            data = seedsAndSeedlings_forModeling_final_standard, 
+                            family = zero_inflated_negbinomial(link = "log", link_shape = "log", link_zi = "logit"), # zero-inflated neg. binom. 
+                            prior = c(set_prior("normal(0, 1e6)", class = "b"), # non-informative priors for predictors
+                            set_prior("normal(0, 1e6)", class = "Intercept")), # non-informative priors for intercept
+                            control = list(adapt_delta = .99), # decrease divergent transitions
+                            chains=4, iter=5000, warmup=2500, thin=5
+                            )
+
+# summary -- all converged @ Rhat = 1.0
+summary(finalModSTS_forFigS2)
+# visually check posterior samples - chains are well mixed and diagnostics all ok (commented out below to run knit pdf)
+#launch_shinystan(finalModSTS_forFigS2)
+
+
+#--- 
+# model accounting for zero-inflation/overdispersion (finalModSTS_forFigS2) has better fit according to WAIC than zero-inflated poisson (poissonZI_STS)
+waic(poissonZI_STS, finalModSTS_forFigS2) #finalModSTS_forFigS2 has much lower WAIC as well indiciting better fit
+
+# Comparison of model wreights with WAIC and LOO both show zero-inflated neg. binom. is best 
+model_weights(poissonZI_STS, finalModSTS_forFigS2, weights = "waic") # compare models weights w/ WAIC
+model_weights(poissonZI_STS, finalModSTS_forFigS2, weights = "loo")  # compare models weights w/ LOO
+
+#--- 
+# final diagnostics and summaries of final model (finalModSTS_forFigS2) which uses zero-inflated neg. binom. error dist. 
+
+# Stan code for reproducibility 
+# stancode(finalModSTS_forFigS2)
+
+# summary -- all converged @ Rhat = 1.0
+summary(finalModSTS_forFigS2)
+# visually check posterior samples - chains are well mixed and diagnostics all ok (commented out below to run knit pdf)
+#launch_shinystan(finalModSTS_forFigS2)
+
+# look at summary of sampler output: no divergent transitions and acceptance probability is high 
+summary(do.call(rbind, args = get_sampler_params(finalModSTS_forFigS2$fit, inc_warmup = FALSE)), digits = 2)
+# bayes R^2 = 0.51
+bayes_R2(finalModSTS_forFigS2)
+```
+<br><br>
+
+
+### Fit separate STS models to ensure canopy cover did not bias results for model above (finalModSTS_forFigS2)
+To ensure the including canopy cover in the same model did not bias our results (as canopy cover is strongly influenced by restoration treatment) we fit one model with only restoration treatment as a predictor (ModSTS_onlyTreatment), and one with canopy cover and life-history traits as predictors (ModSTS_noTreatment). Models below show no differences in the results from these two models and the full model, so we report the full model only in the manuscript.  
+```{r}
+# model with only treatment as predictor
+ModSTS_onlyTreatment <- brm(count_seedling ~ Treatment_Ref + 
+                            offset(log(seedsSum)) + (1|Species) + (1|Site), # model STS as the rate of recruits/seeds at a station with only treatment predictor
+                            data = seedsAndSeedlings_forModeling_final_standard, 
+                            family = zero_inflated_negbinomial(link = "log", link_shape = "log", link_zi = "logit"), # zero-inflated neg. binom. 
+                            prior = c(set_prior("normal(0, 1e6)", class = "b"), # non-informative priors for predictors
+                            set_prior("normal(0, 1e6)", class = "Intercept")), # non-informative priors for intercept
+                            control = list(adapt_delta = .99),  # decrease divergent transitions
+                            chains=4, iter=5000, warmup=2500, thin=5
+                            )
+
+# summary -- all converged @ Rhat =1.0
+summary(ModSTS_onlyTreatment)
+# visually check posterior samples - chains are well mixed and diagnostics all ok (commented out below to run knit pdf)
+#launch_shinystan(ModSTS_onlyTreatment)
+
+# look at summary of sampler output: no divergent transitions and acceptance probability is high 
+summary(do.call(rbind, args = get_sampler_params(ModSTS_onlyTreatment$fit, inc_warmup = FALSE)), digits = 2)
+
+#---
+#  model with only canopy cover and life-history traits as predictors 
+ModSTS_noTreatment <- brm(count_seedling ~meanCover + Dispersalmode + SeedSize + 
+                            offset(log(seedsSum)) + (1|Species) + (1|Site), # model STS as the rate of recruits/seeds, only canopy cover and life-history traits as predictors
+                            data = seedsAndSeedlings_forModeling_final_standard, 
+                            family = zero_inflated_negbinomial(link = "log", link_shape = "log", link_zi = "logit"), # zero-inflated neg. binom. 
+                            prior = c(set_prior("normal(0, 1e6)", class = "b"), # non-informative priors for predictors
+                            set_prior("normal(0, 1e6)", class = "Intercept")), # non-informative priors for intercept
+                            control = list(adapt_delta = .99), # decrease divergent transitions
+                            chains=4, iter=5000, warmup=2500, thin=5
+                            )
+
+# summary -- all converged @ Rhat = 1.0
+summary(ModSTS_noTreatment)
+# visually check posterior samples - chains are well mixed and diagnostics all ok (commented out below to run knit pdf)
+#launch_shinystan(ModSTS_noTreatment)
+
+# look at summary of sampler output: no divergent transitions and acceptance probability is high 
+summary(do.call(rbind, args = get_sampler_params(ModSTS_noTreatment$fit, inc_warmup = FALSE)), digits = 2)
+```
+<br><br>
+
+
+### Plot the final full model predictions
+This is Figure S2 in the manuscript   
+```{r, warning=FALSE}
+# plot full model fit (Figure S2)
+posteriorFigS2 <- as.array(finalModSTS_forFigS2)
+dimnames(posteriorFigS2)$parameters[2] <- "Natural regeneration"
+dimnames(posteriorFigS2)$parameters[3] <- "Applied nucleation"
+dimnames(posteriorFigS2)$parameters[4] <- "Plantation"
+dimnames(posteriorFigS2)$parameters[5] <- "Canopy cover"
+dimnames(posteriorFigS2)$parameters[6] <- "Animal dispersed"
+dimnames(posteriorFigS2)$parameters[7] <- "Seed size: \u22655 mm"
+color_scheme_set("darkgray")
+# Make Figure S2 
+FigureS2 <- mcmc_intervals(posteriorFigS2, prob = 0, prob_outer = 0.95, 
+                           pars = c("Natural regeneration", "Applied nucleation", 
+                                    "Plantation", "Canopy cover",
+                                    "Animal dispersed", "Seed size: \u22655 mm"))+
+                           theme_pubr()+
+                           theme(axis.text.x = element_text(size = 14),
+                           axis.text.y = element_text(size = 14))+ 
+                           xlim(-1.5, 10)+ 
+                           annotate("text", x = 8, y = 6, label = "paste(italic(R) ^ 2, \" = 0.51\")", parse = TRUE, size = 5.5)
+FigureS2
+ggsave("FigureS2.pdf", width = 7, height = 6, units = "in", dpi = 600, device = cairo_pdf)
+```
+<br><br>
+
+
+### Model STS separtately by small seeds (<5 mm) and large seeds (>=5 mm) 
+To determine if the influence of the predictors on the STS differed for species with small (<5 mm) or large (>=5 mm) seeds, we built the full model above including interaction terms between seed size and all predictors. The model including interaction terms did not converge due to low observations of large-seeded seedlings, so we built the full model above (excluding seed size) with our data subset by either <5 mm (finalModSTS_forFig1A) or >=5 mm seeds (finalModSTS_forFig1B).  
+```{r}
+# by seed size
+# small seeds (<5 mm)
+finalModSTS_forFig1A <- brm(count_seedling ~ Treatment_Ref + meanCover + Dispersalmode + 
+                            offset(log(seedsSum)) + (1| Species) + (1|Site), # model STS as the rate of recruits/seeds with all predictors
+                            data = subset(seedsAndSeedlings_forModeling_final_standard, SeedSize == "1"), # only model <5 mm seeds STS  
+                            family = zero_inflated_negbinomial(link = "log", link_shape = "log", link_zi = "logit"), # zero-inflated neg. binom. 
+                            prior = c(set_prior("normal(0, 1e6)", class = "b"), # non-informative priors for predictors
+                            set_prior("normal(0, 1e6)", class = "Intercept")), # non-informative priors for intercept
+                            control = list(adapt_delta = .99), # decrease divergent transitions
+                            chains=4, iter=5000, warmup=2500, thin=5
+                            )
+
+
+# Stan code for reproducibility 
+#stancode(finalModSTS_forFig1A)
+
+# visually check posterior samples - chains are well mixed and diagnostics all ok (commented out below to run knit pdf)
+#launch_shinystan(finalModSTS_forFig1A)
+
+# look at summary of sampler output: no divergent transitions and acceptance probability is high 
+summary(do.call(rbind, args = get_sampler_params(finalModSTS_forFig1A$fit, inc_warmup = FALSE)), digits = 2)
+# summary -- all converged @ Rhat <=1.00
+summary(finalModSTS_forFig1A)
+# bayes R^2 = 0.51
+bayes_R2(finalModSTS_forFig1A)
+
+
+#---
+# large seeds (>=5 mm)
+finalModSTS_forFig1B <- brm(count_seedling ~ Treatment_Ref + meanCover + Dispersalmode + 
+                            offset(log(seedsSum_scaled)) + (1| Species) + (1|Site), # model STS as the rate of recruits/seeds with all predictors
+                            data = subset(seedsAndSeedlings_forModeling_final_standard, SeedSize == "2"), # only model >=5 mm seeds STS  
+                            family = zero_inflated_negbinomial(link = "log", link_shape = "log", link_zi = "logit"), # zero-inflated neg. binom. 
+                            prior = c(set_prior("normal(0, 1e6)", class = "b"), # non-informative priors for predictors
+                            set_prior("normal(0, 1e6)", class = "Intercept")), # non-informative priors for intercept
+                            control = list(adapt_delta = .99), # decrease divergent transitions
+                            chains=4, iter=5000, warmup=2500, thin=5
+                            )
+
+
+# Stan code for reproducibility 
+#stancode(finalModSTS_forFig1B)
+# visually check posterior samples - chains are well mixed and diagnostics all ok (commented out below to run knit pdf)
+#launch_shinystan(finalModSTS_forFig1B)
+
+# look at summary of sampler output: no divergent transitions and acceptance probability is high 
+summary(do.call(rbind, args = get_sampler_params(finalModSTS_forFig1B$fit, inc_warmup = FALSE)), digits = 2)
+# summary -- all converged @ Rhat <=1.0
+summary(finalModSTS_forFig1B)
+# bayes R^2 = 0.53
+bayes_R2(finalModSTS_forFig1B)
+```
+<br><br>
+
+
+### Plot the small seeds (<5 mm) and large seeds (>=5 mm) model predictions
+This is Figure 1 in the manuscript  
+```{r, warning=FALSE}
+#-------------------------------
+# small seeds (<5 mm)
+# posterior
+posterior_SmallSeed <- as.array(finalModSTS_forFig1A)
+dimnames(posterior_SmallSeed)$parameters[2] <- "Natural regeneration"
+dimnames(posterior_SmallSeed)$parameters[3] <- "Applied nucleation"
+dimnames(posterior_SmallSeed)$parameters[4] <- "Plantation"
+dimnames(posterior_SmallSeed)$parameters[5] <- "Canopy cover"
+dimnames(posterior_SmallSeed)$parameters[6] <- "Animal dispersed"
+
+color_scheme_set("darkgray")
+# FIGURED!
+STSFig1_a <- mcmc_intervals(posterior_SmallSeed, prob = 0, prob_outer = 0.95, 
+                           pars = c("Natural regeneration", "Applied nucleation", 
+                                    "Plantation", "Canopy cover",
+                                    "Animal dispersed"))+
+                           labs(title="Seeds <5 mm")+
+                           theme_pubr()+
+                           theme(axis.text.x = element_text(size = 14),
+                                 axis.text.y = element_text(size = 14), 
+                                 plot.title = element_text(size=16, face="bold"))+ 
+                           xlim(-1.5, 11)+ 
+                           annotate("text", x = 8, y = 5.25, label = "paste(italic(R) ^ 2, \" = 0.51\")", parse = TRUE, size = 5.5)
+
+STSFig1_a
+
+#-------------------------------
+# large seeds (>=5 mm)
+# posterior
+posterior_LargeSeed <- as.array(finalModSTS_forFig1B)
+dimnames(posterior_LargeSeed)$parameters[2] <- "Natural regeneration"
+dimnames(posterior_LargeSeed)$parameters[3] <- "Applied nucleation"
+dimnames(posterior_LargeSeed)$parameters[4] <- "Plantation"
+dimnames(posterior_LargeSeed)$parameters[5] <- "Canopy cover"
+dimnames(posterior_LargeSeed)$parameters[6] <- "Animal dispersed"
+
+color_scheme_set("darkgray")
+
+STSFig1_b <- mcmc_intervals(posterior_LargeSeed, prob = 0, prob_outer = 0.95, 
+                            pars = c("Natural regeneration", "Applied nucleation", 
+                                     "Plantation", "Canopy cover",
+                                     "Animal dispersed"))+                           
+                           labs(title="Seeds \u22655 mm")+
+                           theme_pubr()+
+                           theme(axis.text.x = element_text(size = 14),
+                                 axis.text.y = element_text(size = 14),
+                                 plot.title = element_text(size=16, face="bold"))+ 
+                           xlim(-6, 13.8)+ 
+                           annotate("text", x = 10, y = 5.25, label = "paste(italic(R) ^ 2, \" = 0.53\")", parse = TRUE, size = 5.5)
+
+STSFig1_b
+ 
+# Make Figure 1
+Figure1 <- ggarrange(STSFig1_a, STSFig1_b, labels = c("A)", "B)"), ncol = 2, nrow = 1)
+Figure1
+ggsave("Figure1.pdf", width = 14, height = 6, units = "in", dpi = 600, device = cairo_pdf)
+```
+<br><br>
+
+
+## Additional summaries for results section
+<br><br>
+
+### Focal species list & total seeds and seedling recruit summaries
+Compute observed seed and seedling summaries and make Table 1 (focal species) and Table S2 (seed and seedling summaries by species)  
+```{r, warning=FALSE}
+# focal species seed and seedling summaries
+seedSeedlingSummary_byTreat <- seedsAndSeedlings_ByPlot_all %>%
+                               group_by(Species, Treatment) %>% 
+                               summarize(plotOccurrence_Seeds= sum(present_seeds, na.rm = TRUE), # sum of seeds arriving in all treatments
+                                         totalSeeds = sum(seedsSum, na.rm = TRUE), 
+                                         totalSeedlings = sum(count_seedling, na.rm = TRUE)) %>% # sum of seedlings arriving in all treatments
+                               filter(plotOccurrence_Seeds >=2 & Species != c("ACN_ARB") & Species != c("RUA_GLA")) %>% # filter to select focal species used in randomizations/modeling
+                               dplyr::select(-plotOccurrence_Seeds)
+
+# Table S2 seed and seedling totals by species 
+TableS2 <- seedSeedlingSummary_byTreat %>% 
+           gather(variable, value, -(Treatment:Species)) %>%
+           unite(temp, Treatment, variable) %>%
+           spread(temp, value)
+
+
+# Table focal species info. 
+Table1_join <- inner_join(TableS2, islasTraits, by = "Species")
+Table1 <- Table1_join %>% 
+           dplyr::select(Species, Family, Genus, SpecificEpithet, Growthform, Dispersalmode, SuccessionalStage, SeedSize)  %>% 
+           mutate(seedSizeCat="NA") %>% 
+           mutate(seedSizeCat = ifelse(SeedSize == 1, "<5 mm", seedSizeCat)) %>% 
+           mutate(seedSizeCat = ifelse(SeedSize == 2, "\u22655 mm", seedSizeCat)) %>% 
+           dplyr::select(-SeedSize) 
+ 
+names(Table1)[8] <- "SeedSize"
+
+#------
+# compute summaries 
+#total observed seeds = 320,701
+totalSeeds <- sum(seedSeedlingSummary_byTreat$totalSeeds)
+totalSeeds
+
+#total observed seedlings = 598
+totalSeedlings <- sum(seedSeedlingSummary_byTreat$totalSeedlings)
+totalSeedlings
+
+# total nummber of species = 43
+length(unique(seedSeedlingSummary_byTreat$Species))
+
+## total observed seeds - 99.9%
+seedsAndSeedlings_ByPlot_all$seedsSum <- as.numeric(seedsAndSeedlings_ByPlot_all$seedsSum)
+(totalSeeds/with(seedsAndSeedlings_ByPlot_all, sum(seedsSum, na.rm = TRUE)))*100
+
+## total observed seedlings - 70.0%
+(totalSeedlings/with(seedsAndSeedlings_ByPlot_all, sum(count_seedling), na.rm = TRUE))*100
+
+# HEL_APP/LIP_MYR totals
+seedSeedlingSummary_bySpp <- seedSeedlingSummary_byTreat %>% 
+                             group_by(Species) %>% 
+                             summarize(totalSeedsBySpp = sum(totalSeeds))
+
+totalHELAPP <- seedSeedlingSummary_bySpp[seedSeedlingSummary_bySpp$Species == "HEL_APP",2]
+totalLIPMYR <- seedSeedlingSummary_bySpp[seedSeedlingSummary_bySpp$Species == "LIP_MYR",2]
+
+# HEL_APP/LIP_MYR percentage of total
+(totalHELAPP+totalLIPMYR)/totalSeeds*100
+```
+<br><br>
+
+
+### Summarize percent canopy cover data for Question 1 results  
+```{r} 
+# calculate percent cover by treatment for summaries in manuscript 
+# make standard error fxn
+stdError <- function(x) sd(x)/sqrt(length(x))
+# percent cover and SE by treatment calculation 
+vegStructureSummary_forMs <- vegStructureSummary %>%
+                             group_by(Treatment) %>%
+                             summarize(coverAll_mean = mean(meanCover), 
+                                       coverAll_SE = stdError(meanCover))
+vegStructureSummary_forMs        
+```
+<br><br>
+
+
+### Final figures/table objects from analyses above:
+Figures --  
+Figure 1: Figure1  
+Figure 2: Figure2  
+Figure S2: FigureS2  
+  
+Tables --  
+Table 1: Table1  
+Table 2: Table2  
+Table S2: TableS2  
+Table S3: TableS3  
+<br><br>
+
+
+#### References
+Muscarella, R., Uriarte, M., Forero-Montaña, J., Comita, L. S., Swenson, N. G., Thompson, J., ... Zimmerman, J. K. (2013). Life-history trade-offs during the seed-to-seedling transition in a subtropical wet forest community. *Journal of Ecology* 101(1): 171–182. doi:10.1111/1365-2745.12027  
+
+Norden, N., Chave, J., Belbenoit, P., Caubère, A., Chatelet, P., Forget, P.-M., ... Thebaud, C. 2009. Interspecific variation in seedling responses to seed limitation and habitat conditions for 14 Neotropical woody species. *Journal of Ecology*, 97(1): 186–197. doi:10.1111/j.1365-2745.2008.01444.x  
+<br><br>
+
+
+#### R session info
+```{r}
+sessionInfo()
+```
+
