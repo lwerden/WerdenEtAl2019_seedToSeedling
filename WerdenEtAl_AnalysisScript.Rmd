@@ -721,7 +721,7 @@ modSeed_succession_mixed <- lmer(deltaSeedLimitation  ~ SuccessionalStage  + (1|
 Anova(modSeed_succession_mixed, type = "II")
 
 # significant ANOVA, do pairwise differences -- late much lower than early 
-emmeans(modEstablish_succession_mixed, pairwise ~ SuccessionalStage)
+emmeans(modSeed_succession_mixed, pairwise ~ SuccessionalStage)
 
 # create successional stage palette
 SuccStagePalette <- c( "#edf8fb", "#006d2c")
@@ -1260,7 +1260,7 @@ emmeans(modEstablish_succession_mixed, pairwise ~ SuccessionalStage)
 
 # remove outliers, same result -- fit full 
 establishLimitAnalysis_final_noOutlier <- subset(establishLimitAnalysis_final, SuccessionalStage == "Early" | SuccessionalStage == "Late")
-establishLimitAnalysis_final_noOutlier <- TEST[-c(46,56),]
+establishLimitAnalysis_final_noOutlier <- establishLimitAnalysis_final_noOutlier[-c(46,56),]
 
 modEstablish_succession_mixed_noOutlier <- lmer(log(deltaEstablishmentLimitation)  ~ SuccessionalStage  + (1|Species), 
                                       establishLimitAnalysis_final_noOutlier)
@@ -1318,7 +1318,7 @@ emmeans(modSeedSize_mixed, pairwise ~ seedSizeCat)
 
 # remove outliers, same result -- no differences b/w groups before or after removing outlier w/ tukey. 
 establishLimitAnalysis_final_noOutlier <- establishLimitAnalysis_final
-establishLimitAnalysis_final_noOutlier <- TEST[-c(46,56),]
+establishLimitAnalysis_final_noOutlier <- establishLimitAnalysis_final_noOutlier[-c(46,56),]
 modSeedSize_mixed_noOutlier <- lmer(deltaEstablishmentLimitation  ~ seedSizeCat + (1|Species), establishLimitAnalysis_final_noOutlier)
 Anova(modSeedSize_mixed_noOutlier, type = "II")
 emmeans(modSeedSize_mixed_noOutlier, pairwise ~ seedSizeCat) # no pairwise differences... 
@@ -1415,7 +1415,7 @@ fig2D
 ### Make figure 2
 * Combine panels to make Figure 2   
 ```{r, warning=FALSE}
-Figure2 <- ggarrange(fig2A, fig2B, fig2C, fig2D, labels = c("A)", "B)", "C)", "D)"), ncol = 2, nrow = 2)
+Figure2 <- ggarrange(fig2A, fig2C, fig2B, fig2D, labels = c("A)", "B)", "C)", "D)"), ncol = 2, nrow = 2)
 Figure2
 ggsave("Figure2.pdf", width = 8, height = 8, units = "in", dpi = 600, device = cairo_pdf)
 ```
