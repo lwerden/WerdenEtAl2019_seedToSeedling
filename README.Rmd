@@ -1,7 +1,7 @@
 ---
 title: "readme"
 author: "leland werden"
-date: "10/5/2019"
+date: "12/12/2019"
 output: html_document
 ---
 
@@ -11,5 +11,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ## Description of repo
 
-This contains analysis scripts and output for:  
+This contains analysis scripts, data, and output for:  
 Werden, L.K., Holl, K.D., Rosales, J.A.. Sylvester, J.M., Zahawi, R.A. 2019. Effects of dispersal- and niche-based factors on tree recruitment in tropical wet forest restoration. In review. 
+
+Main script is: WerdenEtAl_AnalysisScript.rmd and includes all analysis for the paper. 
