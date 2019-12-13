@@ -15,3 +15,4 @@ This contains analysis scripts, data, and output for:
 Werden, L.K., Holl, K.D., Rosales, J.A.. Sylvester, J.M., Zahawi, R.A. 2019. Effects of dispersal- and niche-based factors on tree recruitment in tropical wet forest restoration. In review. 
 
 Main script is: WerdenEtAl_AnalysisScript.rmd and includes all analysis for the paper. 
+All data for analysis are in: WerdenEtAl2019Data.RData and main script reads this file in. 
