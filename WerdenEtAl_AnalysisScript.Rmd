@@ -390,8 +390,6 @@ The goal here is to determine if the seed limitation you observed in the field d
 * Compare the randomized and observed limitation  
 <br><br>
 
-UPDATE
-
 #### Perform the seed limitation randomization procedure for each species X treatment combination
 ```{r, warning=FALSE}
 # select n seed traps at random (with replacement) for each species (n = # of seeds observed for a species). Do this 1,000 times and put all the data in a list by species 
@@ -1249,15 +1247,6 @@ fig2A
 modEstablish_succession_mixed <- lmer(deltaEstablishmentLimitation  ~ SuccessionalStage  + (1|Species), 
                                       subset(establishLimitAnalysis_final, SuccessionalStage == "Early" | SuccessionalStage == "Late"))
 
-# remove outliers, same result -- fit full 
-establishLimitAnalysis_final_noOutlier <- subset(establishLimitAnalysis_final, SuccessionalStage == "Early" | SuccessionalStage == "Late")
-establishLimitAnalysis_final_noOutlier <- TEST[-c(46,56),]
-
-modEstablish_succession_mixed_noOutlier <- lmer(log(deltaEstablishmentLimitation)  ~ SuccessionalStage  + (1|Species), 
-                                      establishLimitAnalysis_final_noOutlier)
-Anova(modEstablish_succession_mixed_noOutlier, type = "II")
-
-
 # check assumptions (commented out for brevity) -- assumptions met 
 # plot(modEstablish_succession_mixed) # residuals OK, 
 # qqnorm(residuals(modEstablish_succession_mixed)) #QQ plot not perfect but OK, log transform = same result so going no transform
@@ -1267,6 +1256,16 @@ Anova(modEstablish_succession_mixed, type = "II")
 
 # significant ANOVA, do pairwise differences -- late much lower than early 
 emmeans(modEstablish_succession_mixed, pairwise ~ SuccessionalStage)
+
+
+# remove outliers, same result -- fit full 
+establishLimitAnalysis_final_noOutlier <- subset(establishLimitAnalysis_final, SuccessionalStage == "Early" | SuccessionalStage == "Late")
+establishLimitAnalysis_final_noOutlier <- TEST[-c(46,56),]
+
+modEstablish_succession_mixed_noOutlier <- lmer(log(deltaEstablishmentLimitation)  ~ SuccessionalStage  + (1|Species), 
+                                      establishLimitAnalysis_final_noOutlier)
+Anova(modEstablish_succession_mixed_noOutlier, type = "II")
+emmeans(modEstablish_succession_mixed_noOutlier, pairwise ~ SuccessionalStage)
 
 # make CLD for figure
 successsional_sig <- c("a", "b")
@@ -1311,7 +1310,7 @@ modSeedSize_mixed <- lmer(deltaEstablishmentLimitation  ~ seedSizeCat + (1|Speci
 # plot(modSeedSize_mixed) # residuals OK, 
 # qqnorm(residuals(modSeedSize_mixed)) #QQ plot not perfect but OK, log transform = same result so going no transform
 
-# one-way Anova testing deltaEstablishmentLimit differences b/w seed sizes 
+# one-way Anova testing deltaEstablishmentLimit = no sig., no differences b/w seed size in terms of deltaEstablish
 Anova(modSeedSize_mixed, type = "II")
 
 # significant ANOVA, do pairwise differences -- large much lower than small 
@@ -1320,21 +1319,9 @@ emmeans(modSeedSize_mixed, pairwise ~ seedSizeCat)
 # remove outliers, same result -- no differences b/w groups before or after removing outlier w/ tukey. 
 establishLimitAnalysis_final_noOutlier <- establishLimitAnalysis_final
 establishLimitAnalysis_final_noOutlier <- TEST[-c(46,56),]
-
 modSeedSize_mixed_noOutlier <- lmer(deltaEstablishmentLimitation  ~ seedSizeCat + (1|Species), establishLimitAnalysis_final_noOutlier)
 Anova(modSeedSize_mixed_noOutlier, type = "II")
-emmeans(modSeedSize_mixed_noOutlier, pairwise ~ seedSizeCat)
-
-# make CLD for figure
-seed_sig <- c("a", "b")
-
-# combine with the upper quantile of each of the boxes to label in the same place on figure
-# example: https://stackoverflow.com/questions/44712185/tukeys-post-hoc-on-ggplot-boxplot
-yvalue_seed <- establishLimitAnalysis_final %>%
-                group_by(seedSizeCat) %>%
-                summarize(deltaEstablishmentLimitation = quantile(deltaEstablishmentLimitation, 0.75, na.rm = TRUE))
-final_seed <- yvalue_seed
-final_seed$seed_sig <- seed_sig
+emmeans(modSeedSize_mixed_noOutlier, pairwise ~ seedSizeCat) # no pairwise differences... 
 
 # create seed size palette
 SSpalette <- c("#fe9929", "#d95f0e")
@@ -1355,13 +1342,7 @@ fig2C <- ggboxplot(establishLimitAnalysis_final,
                     xlab = "Seed Size", 
                     ylab = expression(delta["establishment"]),
                     legend = "none")+ 
-                   theme(axis.title.y =  element_text(face = "bold", size = 16))+ 
-                   geom_text(data = final_seed, 
-                            aes(x = seedSizeCat, y = deltaEstablishmentLimitation, label = seed_sig),
-                            vjust=-.45,
-                            hjust=-.28, 
-                            fontface = "bold", 
-                            size = 5)
+                   theme(axis.title.y =  element_text(face = "bold", size = 16))
 fig2C
 ```
 <br><br>
