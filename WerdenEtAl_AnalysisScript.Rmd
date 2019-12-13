@@ -632,6 +632,11 @@ observedRandomCompareTable_c <- full_join(observedRandomCompareTable_b,
                                                                                      by = "Species")
  
 TableS3 <- inner_join(observedRandomCompareTable_c, islasTraits, by = "Species")
+
+# round to two digits
+TableS3_rounded <- TableS3 %>% 
+                  mutate_if(is.numeric, round, digits=2)
+
 ```
 <br><br>
 
@@ -684,7 +689,7 @@ modSeed_treatment_mixed <- lmer(deltaSeedLimitation ~ Treatment  + (1|Species), 
 # qqnorm(residuals(modEstablish_treatment_mixed)) #QQ plot not perfect but OK, log transform = same result so going no transform
 
 # one-way Anova testing deltaEstablishmentLimit differences b/w treatments 
-# no differences detected 
+# no differences detected b/w treatments in terms of seed limitation 
 Anova(modSeed_treatment_mixed, type = "II")
 
 # color-blind friendly color palette for plotting 
@@ -692,7 +697,7 @@ CB_YlGnBu <- c("#ffffcc", "#a1dab4", "#41b6c4", "#225ea8")
 
 # plot the deltaEstablish by treatment  
 # no treatment differences so no compact letter display necessary
-fig2A_seed <- ggboxplot(seedLimitAnalysis_final,
+fig2A_Seed <- ggboxplot(seedLimitAnalysis_final,
                     x = "Treatment", 
                     y = "deltaSeedLimitation", 
                     fill = "Treatment", 
@@ -703,7 +708,7 @@ fig2A_seed <- ggboxplot(seedLimitAnalysis_final,
                     legend = "none")+ 
                    theme(axis.title.y =  element_text(face = "bold", size = 16))+
                    scale_x_discrete(labels = c("NR", "AN", "P", "R"))
-fig2A_seed
+fig2A_Seed
 
 #------
 # Examine delta Establishment Limitation by successional stage
@@ -717,18 +722,15 @@ modSeed_succession_mixed <- lmer(deltaSeedLimitation  ~ SuccessionalStage  + (1|
 # plot(modEstablish_succession_mixed) # residuals OK, 
 # qqnorm(residuals(modEstablish_succession_mixed)) #QQ plot not perfect but OK, log transform = same result so going no transform
 
-# one-way Anova testing deltaEstablishmentLimit differences b/w successional status 
+# one-way Anova testing deltaEstablishmentLimit - no differences b/w for successional status for seed limitation
 Anova(modSeed_succession_mixed, type = "II")
-
-# significant ANOVA, do pairwise differences -- late much lower than early 
-emmeans(modSeed_succession_mixed, pairwise ~ SuccessionalStage)
 
 # create successional stage palette
 SuccStagePalette <- c( "#edf8fb", "#006d2c")
 
 # differences between successional stage and establish limitation 
 # no differences with successional stage so no compact letter display necessary
-fig2B_seed <- ggboxplot(subset(seedLimitAnalysis_final, SuccessionalStage == "Early" | SuccessionalStage == "Late"),
+fig2B_Seed <- ggboxplot(subset(seedLimitAnalysis_final, SuccessionalStage == "Early" | SuccessionalStage == "Late"),
                     x = "SuccessionalStage", 
                     y = "deltaSeedLimitation", 
                     fill = "SuccessionalStage", 
@@ -738,7 +740,7 @@ fig2B_seed <- ggboxplot(subset(seedLimitAnalysis_final, SuccessionalStage == "Ea
                     ylab = expression(delta["seed"]),
                     legend = "none")+ 
                     theme(axis.title.y =  element_text(face = "bold", size = 16))
-fig2B_seed
+fig2B_Seed
 
 #-----
 # Last, compare delta Establishment Limitation by seed size 
@@ -750,11 +752,8 @@ modSeedSize_mixed_Seed <- lmer(deltaSeedLimitation  ~ seedSizeCat + (1|Species),
 # plot(modSeedSize_mixed) # residuals OK, 
 # qqnorm(residuals(modSeedSize_mixed)) #QQ plot not perfect but OK, log transform = same result so going no transform
 
-# one-way Anova testing deltaEstablishmentLimit differences b/w seed sizes 
+# one-way Anova testing deltaEstablishmentLimit - no differences b/w seed limitation for seed sizes 
 Anova(modSeedSize_mixed_Seed, type = "II")
-
-# significant ANOVA, do pairwise differences -- large much lower than small 
-emmeans(modSeedSize_mixed_Seed, pairwise ~ seedSizeCat)
 
 # create seed size palette
 SSpalette <- c("#fe9929", "#d95f0e")
@@ -778,6 +777,12 @@ fig2C_Seed <- ggboxplot(seedLimitAnalysis_final,
                     legend = "none")+ 
                    theme(axis.title.y =  element_text(face = "bold", size = 16))
 fig2C_Seed
+
+# save 
+FigureS3 <- ggarrange(fig2A_Seed, fig2B_Seed, fig2C_Seed, labels = c("A)", "B)", "C)"), ncol = 2, nrow = 2)
+FigureS3
+ggsave("FigureS3.pdf", width = 8, height = 8, units = "in", dpi = 600, device = cairo_pdf)
+
 ```
 <br><br>
 
@@ -1166,6 +1171,11 @@ establishTable_c <- full_join(establishTable_b,
                                                                                by = "Species")
  
 Table2 <- inner_join(establishTable_c, islasTraits, by = "Species")
+
+# round to two digits
+Table2_rounded <- Table2 %>% 
+                  mutate_if(is.numeric, round, digits=2)
+
 ```
 <br><br>
 
