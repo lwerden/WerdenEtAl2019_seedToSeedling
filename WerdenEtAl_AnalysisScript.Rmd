@@ -383,11 +383,11 @@ sppNames_R <- colnames(plotSpeciesMatrix_R_abundance_final)
 <br><br>
 
 
-### Now do randomizations for seed limitation for each treatment
-The goal here is to determine if the seed limitation you observed in the field differs from a null model where seeds are Poisson distributed across the traps (Norden et al. 2009). For each species the approach is be to:  
-* Randomly select n seed traps (with replacement) from the observed data for each species. In this case n = the total number of seeds observed for a species (sum of the rows for each column).    
+### Now do randomizations for seed limitation for each treatment X species combination 
+The goal here is to determine if the seed limitation you observed in the field differs from a null model where seeds arrive randomly across sampling stations according to a Poisson process (Norden et al. 2009). For each species the approach will be to:  
+* Assume seeds arrive randomly across the sampling stations according to a Poisson process (Norden et al. 2009) and conduct this randomization 1,000 times for each species X treatment combination. 
 * Calculate randomized seed limitation for each species and compute 95% confidence intervals over the 1,000 iterations  
-* Compare the randomized and observed limitation  
+* Compare the randomized and observed seed limitation  
 <br><br>
 
 #### Perform the seed limitation randomization procedure for each species X treatment combination
@@ -873,11 +873,11 @@ sppNames_seedling_R <- colnames(plotSpeciesMatrix_seedling_R_abundance_final)
 <br><br>
 
 
-### Now do randomizations for establishment limitation for each treatment
-The goal here is to determine if the establishment limitation you observed in the field differs from a null model where seeds are Poisson distributed across the traps (Norden et al. 2019 & Muscarella et al. 2013). For each species the approach will be to:  
-* Randomly select n stations  (with replacement) from the observed data for each species. In this case n = the total number of seeds observed for a species (sum of the rows for each column).  
-* Calculate randomized seed limitation for each species and compute 95% confidence intervals over the 1,000 iterations  
-* Compare the randomized and observed limitation  
+### Now do randomizations for establishment limitation for each treatment X species combination 
+The goal here is to determine if the establishment limitation you observed in the field differs from a null model where seedlings establish according to a Poisson process across sampling stations (Norden et al. 2009). For each species the approach will be to:  
+* Assume each seedlings establish randomly (and only at traps where seeds arrived too) across the sampling stations according to a Poisson process (Norden et al. 2009) and conduct this randomization 1,000 times for each species X treatment combination. 
+* Calculate randomized establishment limitation for each species and compute 95% confidence intervals over the 1,000 iterations  
+* Compare the randomized and observed establishment limitation  
 <br><br>
 
 
