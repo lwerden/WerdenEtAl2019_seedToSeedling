@@ -26,6 +26,7 @@ require(sjstats)
 require(vcdExtra)
 require(car)
 require(lme4)
+require(scales)
 ```
 
 ```{r set-options}
@@ -1237,7 +1238,7 @@ CB_YlGnBu <- c("#ffffcc", "#a1dab4", "#41b6c4", "#225ea8")
 
 # plot the deltaEstablish by treatment  
 # no treatment differences so no compact letter display necessary
-fig2A <- ggboxplot(establishLimitAnalysis_final,
+fig3A <- ggboxplot(establishLimitAnalysis_final,
                     x = "Treatment", 
                     y = "deltaEstablishmentLimitation", 
                     fill = "Treatment", 
@@ -1248,7 +1249,7 @@ fig2A <- ggboxplot(establishLimitAnalysis_final,
                     legend = "none")+ 
                    theme(axis.title.y =  element_text(face = "bold", size = 16))+
                    scale_x_discrete(labels = c("NR", "AN", "P", "R"))
-fig2A
+fig3A
 
 #------
 # Examine delta Establishment Limitation by successional stage
@@ -1292,7 +1293,7 @@ final_succ$successsional_sig <- successsional_sig
 SuccStagePalette <- c( "#edf8fb", "#006d2c")
 
 # differences between successional stage and establish limitation 
-fig2B <- ggboxplot(subset(establishLimitAnalysis_final, SuccessionalStage == "Early" | SuccessionalStage == "Late"),
+fig3B <- ggboxplot(subset(establishLimitAnalysis_final, SuccessionalStage == "Early" | SuccessionalStage == "Late"),
                     x = "SuccessionalStage", 
                     y = "deltaEstablishmentLimitation", 
                     fill = "SuccessionalStage", 
@@ -1308,7 +1309,7 @@ fig2B <- ggboxplot(subset(establishLimitAnalysis_final, SuccessionalStage == "Ea
                               hjust=-.28, 
                               fontface = "bold", 
                               size = 5)
-fig2B
+fig3B
 
 #-----
 # Last, compare delta Establishment Limitation by seed size 
@@ -1343,7 +1344,7 @@ establishLimitAnalysis_final <- establishLimitAnalysis_final %>%
                                  mutate(seedSizeCat = ifelse(SeedSize == "2" |SeedSize == "3" | SeedSize == "4", "\u22655 mm", seedSizeCat)) 
 
 # no differences between establish limit and seed size seed size 
-fig2C <- ggboxplot(establishLimitAnalysis_final,
+fig3C <- ggboxplot(establishLimitAnalysis_final,
                     x = "seedSizeCat", 
                     y = "deltaEstablishmentLimitation", 
                     fill = "seedSizeCat", 
@@ -1353,7 +1354,7 @@ fig2C <- ggboxplot(establishLimitAnalysis_final,
                     ylab = expression(delta["establishment"]),
                     legend = "none")+ 
                    theme(axis.title.y =  element_text(face = "bold", size = 16))
-fig2C
+fig3C
 ```
 <br><br>
 
@@ -1400,7 +1401,7 @@ obsTreat_sig <- c("a", "b", "ab")
 # plot the seed limitation as just mean bars instead
 plot.obsSS.emm <- tidy(obsSS.emm$emmeans)
 
-fig2D <- ggbarplot(plot.obsSS.emm,
+fig3D <- ggbarplot(plot.obsSS.emm,
                       x = "Treatment", 
                       y = "estimate", 
                       fill = "Treatment", 
@@ -1417,7 +1418,7 @@ fig2D <- ggbarplot(plot.obsSS.emm,
                                 fontface = "bold", 
                                 size = 5)+
                       scale_x_discrete(labels = c("NR", "AN", "P"))
-fig2D
+fig3D
 ```
 <br><br>
 
@@ -1425,9 +1426,9 @@ fig2D
 ### Make figure 2
 * Combine panels to make Figure 2   
 ```{r, warning=FALSE}
-Figure2 <- ggarrange(fig2A, fig2C, fig2B, fig2D, labels = c("A)", "B)", "C)", "D)"), ncol = 2, nrow = 2)
-Figure2
-ggsave("Figure2.pdf", width = 8, height = 8, units = "in", dpi = 600, device = cairo_pdf)
+Figure3 <- ggarrange(fig3A, fig3C, fig3B, fig3D, labels = c("A)", "B)", "C)", "D)"), ncol = 2, nrow = 2)
+Figure3
+ggsave("Figure3.pdf", width = 8, height = 8, units = "in", dpi = 600, device = cairo_pdf)
 ```
 <br><br>
 
@@ -1716,7 +1717,7 @@ To determine if the influence of the predictors on the STS differed for species 
 ```{r}
 # by seed size
 # small seeds (<5 mm)
-finalModSTS_forFig1A <- brm(count_seedling ~ Treatment_Ref + meanCover + Dispersalmode + 
+finalModSTS_forFig2A <- brm(count_seedling ~ Treatment_Ref + meanCover + Dispersalmode + 
                             offset(log(seedsSum_scaled)) + (1| Species) + (1|Site), # model STS as the rate of recruits/seeds with all predictors
                             data = subset(seedsAndSeedlings_forModeling_final_standard, SeedSize == "1"), # only model <5 mm seeds STS  
                             family = zero_inflated_negbinomial(link = "log", link_shape = "log", link_zi = "logit"), # zero-inflated neg. binom. 
@@ -1734,16 +1735,16 @@ finalModSTS_forFig1A <- brm(count_seedling ~ Treatment_Ref + meanCover + Dispers
 #launch_shinystan(finalModSTS_forFig1A)
 
 # look at summary of sampler output: no divergent transitions and acceptance probability is high 
-summary(do.call(rbind, args = get_sampler_params(finalModSTS_forFig1A$fit, inc_warmup = FALSE)), digits = 2)
+summary(do.call(rbind, args = get_sampler_params(finalModSTS_forFig2A$fit, inc_warmup = FALSE)), digits = 2)
 # summary -- all converged @ Rhat <=1.00
-summary(finalModSTS_forFig1A)
+summary(finalModSTS_forFig2A)
 # bayes R^2 = 0.51
-bayes_R2(finalModSTS_forFig1A)
+bayes_R2(finalModSTS_forFig2A)
 
 
 #---
 # large seeds (>=5 mm)
-finalModSTS_forFig1B <- brm(count_seedling ~ Treatment_Ref + meanCover + Dispersalmode + 
+finalModSTS_forFig2B <- brm(count_seedling ~ Treatment_Ref + meanCover + Dispersalmode + 
                             offset(log(seedsSum_scaled)) + (1| Species) + (1|Site), # model STS as the rate of recruits/seeds with all predictors
                             data = subset(seedsAndSeedlings_forModeling_final_standard, SeedSize == "2"), # only model >=5 mm seeds STS  
                             family = zero_inflated_negbinomial(link = "log", link_shape = "log", link_zi = "logit"), # zero-inflated neg. binom. 
@@ -1760,11 +1761,11 @@ finalModSTS_forFig1B <- brm(count_seedling ~ Treatment_Ref + meanCover + Dispers
 #launch_shinystan(finalModSTS_forFig1B)
 
 # look at summary of sampler output: no divergent transitions and acceptance probability is high 
-summary(do.call(rbind, args = get_sampler_params(finalModSTS_forFig1B$fit, inc_warmup = FALSE)), digits = 2)
+summary(do.call(rbind, args = get_sampler_params(finalModSTS_forFig2B$fit, inc_warmup = FALSE)), digits = 2)
 # summary -- all converged @ Rhat <=1.0
-summary(finalModSTS_forFig1B)
+summary(finalModSTS_forFig2B)
 # bayes R^2 = 0.53
-bayes_R2(finalModSTS_forFig1B)
+bayes_R2(finalModSTS_forFig2B)
 ```
 <br><br>
 
@@ -1775,7 +1776,7 @@ This is Figure 1 in the manuscript
 #-------------------------------
 # small seeds (<5 mm)
 # posterior
-posterior_SmallSeed <- as.array(finalModSTS_forFig1A)
+posterior_SmallSeed <- as.array(finalModSTS_forFig2A)
 dimnames(posterior_SmallSeed)$parameters[2] <- "Natural regeneration"
 dimnames(posterior_SmallSeed)$parameters[3] <- "Applied nucleation"
 dimnames(posterior_SmallSeed)$parameters[4] <- "Plantation"
@@ -1784,7 +1785,7 @@ dimnames(posterior_SmallSeed)$parameters[6] <- "Animal dispersed"
 
 color_scheme_set("darkgray")
 # FIGURED!
-STSFig1_a <- mcmc_intervals(posterior_SmallSeed, prob = 0, prob_outer = 0.95, 
+STSFig2_a <- mcmc_intervals(posterior_SmallSeed, prob = 0, prob_outer = 0.95, 
                            pars = c("Natural regeneration", "Applied nucleation", 
                                     "Plantation", "Canopy cover",
                                     "Animal dispersed"))+
@@ -1796,12 +1797,12 @@ STSFig1_a <- mcmc_intervals(posterior_SmallSeed, prob = 0, prob_outer = 0.95,
                            xlim(-1.5, 11)+ 
                            annotate("text", x = 8, y = 5.25, label = "paste(italic(R) ^ 2, \" = 0.51\")", parse = TRUE, size = 5.5)
 
-STSFig1_a
+STSFig2_a
 
 #-------------------------------
 # large seeds (>=5 mm)
 # posterior
-posterior_LargeSeed <- as.array(finalModSTS_forFig1B)
+posterior_LargeSeed <- as.array(finalModSTS_forFig2B)
 dimnames(posterior_LargeSeed)$parameters[2] <- "Natural regeneration"
 dimnames(posterior_LargeSeed)$parameters[3] <- "Applied nucleation"
 dimnames(posterior_LargeSeed)$parameters[4] <- "Plantation"
@@ -1810,7 +1811,7 @@ dimnames(posterior_LargeSeed)$parameters[6] <- "Animal dispersed"
 
 color_scheme_set("darkgray")
 
-STSFig1_b <- mcmc_intervals(posterior_LargeSeed, prob = 0, prob_outer = 0.95, 
+STSFig2_b <- mcmc_intervals(posterior_LargeSeed, prob = 0, prob_outer = 0.95, 
                             pars = c("Natural regeneration", "Applied nucleation", 
                                      "Plantation", "Canopy cover",
                                      "Animal dispersed"))+                           
@@ -1822,12 +1823,12 @@ STSFig1_b <- mcmc_intervals(posterior_LargeSeed, prob = 0, prob_outer = 0.95,
                            xlim(-6, 13.8)+ 
                            annotate("text", x = 10, y = 5.25, label = "paste(italic(R) ^ 2, \" = 0.53\")", parse = TRUE, size = 5.5)
 
-STSFig1_b
+STSFig2_b
  
 # Make Figure 1
-Figure1 <- ggarrange(STSFig1_a, STSFig1_b, labels = c("A)", "B)"), ncol = 2, nrow = 1)
-Figure1
-ggsave("Figure1.pdf", width = 14, height = 6, units = "in", dpi = 600, device = cairo_pdf)
+Figure2 <- ggarrange(STSFig2_a, STSFig2_b, labels = c("A)", "B)"), ncol = 2, nrow = 1)
+Figure2
+ggsave("Figure2.pdf", width = 14, height = 6, units = "in", dpi = 600, device = cairo_pdf)
 ```
 <br><br>
 
@@ -1914,10 +1915,105 @@ vegStructureSummary_forMs
 <br><br>
 
 
+### Create overall seed deposition figure for Ecol. Apps revision. 
+```{r}
+# make new seed size categories to match paper 
+seedRain_DepRates <- seedrainWorking %>% 
+                     filter(Growthform %in% c("CT", "UT")) %>% # only trees focus
+                     filter(Dispersalmode %in% c("ZOO", "WIND")) %>% # only animal and wind dispersed
+                     group_by(Site, Treatment, Isize, Plot, Trap, Species, Family, Growthform, Dispersalmode, SuccessionalStage, SeedSize) %>% 
+                     summarize(seedsSum=sum(SR, na.rm = TRUE)) %>%
+                     mutate(present = ifelse(seedsSum>0, "1", "0")) %>%
+                     # add seed size category following Reid at al. 2015 - <= 5mm, >5mm 
+                     mutate(seedSizeCat="NA") %>% 
+                     mutate(seedSizeCat = ifelse(SeedSize == "1", "< 5 mm", seedSizeCat)) %>% 
+                     mutate(seedSizeCat = ifelse(SeedSize == "2" | SeedSize == "3" | SeedSize == "4", ">= 5 mm", seedSizeCat)) %>%
+                     # only use species occuring as seed in >=10% of stations on a treatment basis
+                     filter(Species %in% speciesList_seedlings_tenPercentSeedTreat$Species[speciesList_seedlings_tenPercentSeedTreat$Treatment == "C"] & Treatment == "C" |
+                     Species %in% speciesList_seedlings_tenPercentSeedTreat$Species[speciesList_seedlings_tenPercentSeedTreat$Treatment == "I"] & Treatment == "I" |
+                     Species %in% speciesList_seedlings_tenPercentSeedTreat$Species[speciesList_seedlings_tenPercentSeedTreat$Treatment == "P"] & Treatment == "P" |
+                     Species %in% speciesList_seedlings_tenPercentSeedTreat$Species[speciesList_seedlings_tenPercentSeedTreat$Treatment == "R"] & Treatment == "R") 
+seedRain_DepRates$Species <- as.factor(seedRain_DepRates$Species)                             
+# re-order seedSizeCat factor levels for plotting
+seedRain_DepRates$seedSizeCat <- factor(seedRain_DepRates$seedSizeCat, levels = c("< 5 mm", ">= 5 mm"))
+seedRain_DepRates$Dispersalmode <- factor(seedRain_DepRates$Dispersalmode, levels = c("ZOO", "WIND"))
+
+
+# calculate deposition rates (seeds/m^-2/yr^-1) on station level for seed length categories 
+# calculate deposition rates by dispersal type (seeds/m^-2/yr^-1) -- MAYBE JUST DO THIS FOR SEED SIZE -- OR FACET AND SHOW LARGER SEED SIZE BELOW??
+depositionRateSummary_byPlot_mod_simp <- seedRain_DepRates %>%
+                         group_by(Site, Treatment, Plot, seedSizeCat) %>%
+                         summarize(totalSeeds = sum(seedsSum)) %>%
+                         mutate(depositionRate = (totalSeeds/(.75*3.583)))  # area: 0.75m^2* 12 traps per site= 9m^2 per site // time = (36+7 months= 43/12 = 3.583 years)
+depositionRateSummary_byPlot_mod_simp <- droplevels(depositionRateSummary_byPlot_mod_simp)
+
+# boxcos suggest log transform
+#MASS::boxcox(lm(depositionRate ~ Treatment*seedSizeCat, data = depositionRateSummary_byPlot_mod_simp))
+
+# build mixed model and test for differences b/w treatments (separated by seed size)
+modSR_plot_simp <- lmer(log(depositionRate) ~ Treatment*seedSizeCat + (1|Site), depositionRateSummary_byPlot_mod_simp)
+Anova(modSR_plot_simp, type = "III")
+emm.simp<- emmeans(modSR_plot_simp, pairwise ~ Treatment | seedSizeCat, adjust = "tukey")
+summary(emm.simp, type = "response")
+CLD(emm.simp)
+
+
+# plot it
+# make CLD for figure
+deposit_sig <- c("a", "a", "a", "a", "b", "a", "a", "b")
+
+# combine with the upper quantile of each of the boxes to label in the same place on figure
+# example: https://stackoverflow.com/questions/44712185/tukeys-post-hoc-on-ggplot-boxplot
+yvalue <- depositionRateSummary_byPlot_mod_simp %>%
+          group_by(Treatment, seedSizeCat) %>%
+          summarize(depositionRate = quantile(depositionRate, 0.75))
+final <- yvalue
+final$deposit_sig <- deposit_sig
+
+# color-blind friendly color palette for plotting 
+CB_YlGnBu <- c("#ffffcc", "#a1dab4", "#41b6c4", "#225ea8")
+
+
+# plot the deposition rates 
+Figure1 <- ggboxplot(depositionRateSummary_byPlot_mod_simp[complete.cases(depositionRateSummary_byPlot_mod_simp),],
+                                        x = "Treatment", 
+                                        y = "depositionRate", 
+                                        fill = "Treatment", 
+                                        palette =CB_YlGnBu,
+                                        shape = "Treatment", 
+                                        facet.by = c("seedSizeCat"),
+                                        xlab = "Treatment", 
+                                        legend = "none",
+                                        ylab = expression(paste("Deposition Rate (seeds ", m^{-2}, " ", y^{-1},")")))+
+                                        scale_y_log10(breaks = trans_breaks("log10", function(x) 10^x),
+                                          labels = trans_format("log10", math_format(10^.x)))
+Figure1 <- facet(fig_depositionRate_Ms, facet.by = c("seedSizeCat"),
+                                     panel.labs = list(
+                                     seedSizeCat = c("<5 mm", "\u22655 mm")))+
+                                     theme(axis.text.x = element_text(size = 14),
+                                          axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 0), size = 14),
+                                          axis.text.y = element_text(size = 14),
+                                          axis.title.x = element_blank(),
+                                          strip.text.x = element_text(size=14),
+                                          strip.text.y = element_text(size=14),
+                                          panel.border = element_rect(colour = "black", fill=NA, size=1),
+                                          legend.background = element_rect(colour = 'black', fill = 'white', linetype='solid'))+
+                                      geom_text(data = final, 
+                                                aes(x = Treatment, y = depositionRate, label = deposit_sig),
+                                                vjust=-.45,
+                                                hjust=-.28, 
+                                                fontface = "bold")+
+                                      scale_x_discrete(labels = c("NR", "AN", "P", "R"))
+        
+ggsave("Figure1.pdf", width = 6, height = 6, dpi = 600, units = "in", device=cairo_pdf)
+```
+
+
 ### Final figures/table objects from analyses above:
 Figures --  
 Figure 1: Figure1  
 Figure 2: Figure2  
+Figure 3: Figure3  
 Figure S2: FigureS2  
   
 Tables --  
