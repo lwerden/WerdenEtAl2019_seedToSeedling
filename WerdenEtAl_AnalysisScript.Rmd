@@ -128,10 +128,10 @@ seedRain_sourceLimitationCalcs <- seedRain_All_byTreat_station %>%
                                  totalSeeds = sum(seedsSum, na.rm = TRUE)) %>%  
                                  # calculate source limitation
                                  mutate(sourceLimitation=NA) %>% 
-                                 # 60 traps (5 sites) 
-                                 mutate(sourceLimitation=ifelse(Treatment == "C" | Treatment == "I" | Treatment == "P", exp(-(totalSeeds/20)), sourceLimitation)) %>% 
-                                 # 36 traps (3 sites) 
-                                 mutate(sourceLimitation=ifelse(Treatment == "R", exp(-(totalSeeds/12)), sourceLimitation))
+                                 # 4 traps in each site (5 sites) 
+                                 mutate(sourceLimitation=ifelse(Treatment == "C" | Treatment == "I" | Treatment == "P", exp(-(totalSeeds/4)), sourceLimitation)) %>% 
+                                 # 4 traps in each site (3 sites) 
+                                 mutate(sourceLimitation=ifelse(Treatment == "R", exp(-(totalSeeds/4)), sourceLimitation))
 
 
 ```
@@ -1395,7 +1395,7 @@ CLD(sourceLim.emm)
 
 
 # make CLD for figure
-obsTreat_sig <- c("a", "a", "a", "b")
+obsTreat_sig <- c("a", "ab", "ab", "b")
 
 # plot the seed limitation as just mean bars instead
 plot.sourceLim.emm <- tidy(sourceLim.emm$emmeans)
@@ -1939,4 +1939,3 @@ Norden, N., Chave, J., Belbenoit, P., Caubère, A., Chatelet, P., Forget, P.-M.,
 ```{r}
 sessionInfo()
 ```
-
