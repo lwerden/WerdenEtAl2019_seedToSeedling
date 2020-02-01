@@ -1389,8 +1389,8 @@ seedRain_sourceLimitationCalcs_filter <- seedRain_sourceLimitationCalcs %>%
 
 ##  anovas 
 sourceLimitMod <- lmer(sourceLimitation~Treatment + (1|Species), seedRain_sourceLimitationCalcs_filter)
-Anova(sourceMod, type = "II")
-sourceLim.emm <- emmeans(sourceMod, pairwise ~ Treatment)
+Anova(sourceLimitMod, type = "II")
+sourceLim.emm <- emmeans(sourceLimitMod, pairwise ~ Treatment)
 CLD(sourceLim.emm)
 
 
