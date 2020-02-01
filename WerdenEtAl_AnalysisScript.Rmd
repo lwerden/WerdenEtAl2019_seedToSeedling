@@ -87,9 +87,8 @@ seedRain_seedLimitationCalcs_trap <- seedRain_All_byTreat_trap %>%
                                  # 60 traps total in natural regen. (C), applied nucleation (I) and plantations (12 traps X 5 sites)  
                                  mutate(seedLimitation=ifelse(Treatment == "C" | Treatment == "I" | Treatment == "P", 1-(stationReachedSum_seeds/60), seedLimitation)) %>% 
                                  # 36 traps total in references (12 traps X 3 sites)
-                                 mutate(seedLimitation=ifelse(Treatment == "R", 1-(stationReachedSum_seeds/36), seedLimitation)) 
-
-
+                                 mutate(seedLimitation=ifelse(Treatment == "R", 1-(stationReachedSum_seeds/36), seedLimitation))
+                 
 #-------
 # station level calculations
 # summarize seed rain at the station level for species X treatment combinations 
@@ -106,7 +105,7 @@ seedRain_All_byTreat_station <- seedrainWorking %>%
 seedRain_All_byTreat_station$present <- as.numeric(seedRain_All_byTreat_station$present) 
 
 
-# calculate seed limitation sensu Muller-Landau et al. 2002 for species X treatment combinations @ trap level 
+# calculate seed limitation sensu Muller-Landau et al. 2002 for species X treatment combinations @ station level 
 seedRain_seedLimitationCalcs_station <- seedRain_All_byTreat_station %>% 
                        group_by(Treatment, Species) %>% 
                         
@@ -122,8 +121,22 @@ seedRain_seedLimitationCalcs_station <- seedRain_All_byTreat_station %>%
                                  mutate(seedLimitation=ifelse(Treatment == "R", 1-(stationReachedSum_seeds/36), seedLimitation)) 
 
 
+# calculate source limitation sensu Muller-Landau et al. 2002 for species X treatment X site @ station level 
+seedRain_sourceLimitationCalcs <- seedRain_All_byTreat_station %>% 
+                       group_by(Treatment, Species, Site) %>% 
+                       summarize(# total number seeds per species
+                                 totalSeeds = sum(seedsSum, na.rm = TRUE)) %>%  
+                                 # calculate source limitation
+                                 mutate(sourceLimitation=NA) %>% 
+                                 # 60 traps (5 sites) 
+                                 mutate(sourceLimitation=ifelse(Treatment == "C" | Treatment == "I" | Treatment == "P", exp(-(totalSeeds/20)), sourceLimitation)) %>% 
+                                 # 36 traps (3 sites) 
+                                 mutate(sourceLimitation=ifelse(Treatment == "R", exp(-(totalSeeds/12)), sourceLimitation))
+
+
 ```
 <br><br>
+
 
 ### Calculate recruitment summaries 
 The section below calculates seedling limitation values (not used in manuscript) and recruitment summaries for each species X treatment combination. Calculations done for each species at the station level (n = 4 per treatment plot).  
@@ -1359,55 +1372,41 @@ fig3C
 <br><br>
 
 
-### Compare observed seed limitation between treatments (normalized by reference forest values)
-* Calculate seed limitation values in each of the experimental treatments normalized by the values for the reference forests for each of the animal-dispersed focal species (seed limitation<sub>ref</sub>)  
-* Test for seed limitation<sub>ref</sub> among restoration treatments using mixed-effects one-way ANOVA (species ran.)  
+### Compare source limitation between treatments
+* Test for station-level source limitation<sub>ref</sub>among all treatments using mixed-effects one-way ANOVA (species RE)  
 ```{r, warning = FALSE}
-seedLimitObserved <- TableS3[,c("Species", "seedLimitation_observed_C", "seedLimitation_observed_I",
-                               "seedLimitation_observed_P", "seedLimitation_observed_R", 
-                               "Dispersalmode")]
+# filter out for focal species 
+seedRain_sourceLimitationCalcs_filter <- seedRain_sourceLimitationCalcs %>%  
+                                           filter(Species %in% speciesList_seedlings_tenPercentSeedTreat$Species[speciesList_seedlings_tenPercentSeedTreat$Treatment == "C"] 
+                                                  & Treatment == "C" |
+                                                  Species %in% speciesList_seedlings_tenPercentSeedTreat$Species[speciesList_seedlings_tenPercentSeedTreat$Treatment == "I"] 
+                                                  & Treatment == "I" |
+                                                  Species %in% speciesList_seedlings_tenPercentSeedTreat$Species[speciesList_seedlings_tenPercentSeedTreat$Treatment == "P"] 
+                                                  & Treatment == "P" |
+                                                  Species %in% speciesList_seedlings_tenPercentSeedTreat$Species[speciesList_seedlings_tenPercentSeedTreat$Treatment == "R"] 
+                                                  & Treatment == "R")
 
-#### ----  now look at differences from ref
-observedRefDiff_calcs <- seedLimitObserved %>%
-                          mutate(diff_C = seedLimitation_observed_C - seedLimitation_observed_R) %>%
-                          mutate(diff_I = seedLimitation_observed_I - seedLimitation_observed_R) %>%
-                          mutate(diff_P = seedLimitation_observed_P - seedLimitation_observed_R) %>%
-                          dplyr::select(-seedLimitation_observed_C, 
-                                        -seedLimitation_observed_I, 
-                                        -seedLimitation_observed_P, 
-                                        -seedLimitation_observed_R)
-
-# melt and calculate diff from reference
-observedRefDiff_analysis <- melt(observedRefDiff_calcs)
-names(observedRefDiff_analysis)[3] <- "Treatment"
-names(observedRefDiff_analysis)[4] <- "observedSeedLimit"
-observedRefDiff_analysis$Treatment <- as.character(observedRefDiff_analysis$Treatment)
-observedRefDiff_analysis$Treatment[observedRefDiff_analysis$Treatment=="diff_C"] <- "C"
-observedRefDiff_analysis$Treatment[observedRefDiff_analysis$Treatment=="diff_I"] <- "I"
-observedRefDiff_analysis$Treatment[observedRefDiff_analysis$Treatment=="diff_P"] <- "P"
-observedRefDiff_analysis$Treatment[observedRefDiff_analysis$Treatment=="diff_R"] <- "R"
-observedRefDiff_analysis$Treatment <- as.factor(observedRefDiff_analysis$Treatment)
-observedRefDiff_analysis$Species <- as.factor(observedRefDiff_analysis$Species)
 
 ##  anovas 
-observedMod_Treatment_refDiff_mixed <- lmer(observedSeedLimit~Treatment + (1|Species), subset(observedRefDiff_analysis, Dispersalmode == "ZOO"))
-Anova(observedMod_Treatment_refDiff_mixed, type = "II")
-obsSS.emm <- emmeans(observedMod_Treatment_refDiff_mixed, pairwise ~ Treatment)
-CLD(obsSS.emm)
+sourceLimitMod <- lmer(sourceLimitation~Treatment + (1|Species), seedRain_sourceLimitationCalcs_filter)
+Anova(sourceMod, type = "II")
+sourceLim.emm <- emmeans(sourceMod, pairwise ~ Treatment)
+CLD(sourceLim.emm)
+
 
 # make CLD for figure
-obsTreat_sig <- c("a", "b", "ab")
+obsTreat_sig <- c("a", "a", "a", "b")
 
 # plot the seed limitation as just mean bars instead
-plot.obsSS.emm <- tidy(obsSS.emm$emmeans)
+plot.sourceLim.emm <- tidy(sourceLim.emm$emmeans)
 
-fig3D <- ggbarplot(plot.obsSS.emm,
+fig3D <- ggbarplot(plot.sourceLim.emm,
                       x = "Treatment", 
                       y = "estimate", 
                       fill = "Treatment", 
                       palette =CB_YlGnBu,
                       xlab = "Treatment", 
-                      ylab = expression("Observed seed limitation"["ref"]),
+                      ylab = "Source limitation",
                       legend = "none")+
                       geom_errorbar(aes(ymin=estimate-std.error, ymax=estimate+std.error),
                                      width=.2,                    # Width of the error bars
@@ -1417,7 +1416,7 @@ fig3D <- ggbarplot(plot.obsSS.emm,
                                 hjust=-.28, 
                                 fontface = "bold", 
                                 size = 5)+
-                      scale_x_discrete(labels = c("NR", "AN", "P"))
+                      scale_x_discrete(labels = c("NR", "AN", "P", "R"))
 fig3D
 ```
 <br><br>
@@ -1913,111 +1912,6 @@ vegStructureSummary_forMs <- vegStructureSummary %>%
 vegStructureSummary_forMs        
 ```
 <br><br>
-
-
-### Create overall seed deposition figure for Ecol. Apps revision. 
-```{r}
-# make new seed size categories to match paper 
-seedRain_DepRates <- seedrainWorking %>% 
-                     filter(Growthform %in% c("CT", "UT")) %>% # only trees focus
-                     filter(Dispersalmode %in% c("ZOO", "WIND")) %>% # only animal and wind dispersed
-                     group_by(Site, Treatment, Isize, Plot, Trap, Species, Family, Growthform, Dispersalmode, SuccessionalStage, SeedSize) %>% 
-                     summarize(seedsSum=sum(SR, na.rm = TRUE)) %>%
-                     mutate(present = ifelse(seedsSum>0, "1", "0")) %>%
-                     # add seed size category following Reid at al. 2015 - <= 5mm, >5mm 
-                     mutate(seedSizeCat="NA") %>% 
-                     mutate(seedSizeCat = ifelse(SeedSize == "1", "< 5 mm", seedSizeCat)) %>% 
-                     mutate(seedSizeCat = ifelse(SeedSize == "2" | SeedSize == "3" | SeedSize == "4", ">= 5 mm", seedSizeCat)) %>%
-                     # only use species occuring as seed in >=10% of stations on a treatment basis
-                     filter(Species %in% speciesList_seedlings_tenPercentSeedTreat$Species[speciesList_seedlings_tenPercentSeedTreat$Treatment == "C"] & Treatment == "C" |
-                     Species %in% speciesList_seedlings_tenPercentSeedTreat$Species[speciesList_seedlings_tenPercentSeedTreat$Treatment == "I"] & Treatment == "I" |
-                     Species %in% speciesList_seedlings_tenPercentSeedTreat$Species[speciesList_seedlings_tenPercentSeedTreat$Treatment == "P"] & Treatment == "P" |
-                     Species %in% speciesList_seedlings_tenPercentSeedTreat$Species[speciesList_seedlings_tenPercentSeedTreat$Treatment == "R"] & Treatment == "R") 
-seedRain_DepRates$Species <- as.factor(seedRain_DepRates$Species)                             
-# re-order seedSizeCat factor levels for plotting
-seedRain_DepRates$seedSizeCat <- factor(seedRain_DepRates$seedSizeCat, levels = c("< 5 mm", ">= 5 mm"))
-seedRain_DepRates$Dispersalmode <- factor(seedRain_DepRates$Dispersalmode, levels = c("ZOO", "WIND"))
-
-
-# calculate deposition rates (seeds/m^-2/yr^-1) on station level for seed length categories 
-# calculate deposition rates by dispersal type (seeds/m^-2/yr^-1) -- MAYBE JUST DO THIS FOR SEED SIZE -- OR FACET AND SHOW LARGER SEED SIZE BELOW??
-depositionRateSummary_byPlot_mod_simp <- seedRain_DepRates %>%
-                         group_by(Site, Treatment, Plot, Trap, seedSizeCat) %>%
-                         summarize(totalSeeds = sum(seedsSum)) %>%
-                         mutate(depositionRate = (totalSeeds/(.75*3.583)))  # area: 0.75m^2* 12 traps per site= 9m^2 per site // time = (36+7 months= 43/12 = 3.583 years)
-depositionRateSummary_byPlot_mod_simp <- as.data.frame(depositionRateSummary_byPlot_mod_simp)
-
-# drop levels
-depositionRateSummary_byPlot_mod_simp <- droplevels(depositionRateSummary_byPlot_mod_simp)
-
-# boxcos suggest log transform
-#MASS::boxcox(lm(depositionRate ~ Treatment*seedSizeCat, data = depositionRateSummary_byPlot_mod_simp))
-
-# build mixed model and test for differences b/w treatments (separated by seed size)
-modSR_plot_simp <- lmer(log(depositionRate) ~ Treatment*seedSizeCat + (1|Site), depositionRateSummary_byPlot_mod_simp)
-Anova(modSR_plot_simp, type = "III")
-emm.simp<- emmeans(modSR_plot_simp, pairwise ~ Treatment | seedSizeCat, adjust = "tukey")
-summary(emm.simp, type = "response")
-CLD(emm.simp)
-
-# mean and std.err summaries for Ms
-std <- function(x) sd(x)/sqrt(length(x))
-
-depSumForMs <- depositionRateSummary_byPlot_mod_simp %>% 
-                group_by(Treatment, seedSizeCat) %>%
-                dplyr::summarise(meanDep = mean(depositionRate, na.rm = T), 
-                                 stdErrDep = std(depositionRate))
-
-# plot it
-# make CLD for figure
-deposit_sig <- c("a", "a", "a", "a", "b", "a", "a", "b")
-
-# combine with the upper quantile of each of the boxes to label in the same place on figure
-# example: https://stackoverflow.com/questions/44712185/tukeys-post-hoc-on-ggplot-boxplot
-yvalue <- depositionRateSummary_byPlot_mod_simp %>%
-          group_by(Treatment, seedSizeCat) %>%
-          summarize(depositionRate = quantile(depositionRate, 0.75))
-final <- yvalue
-final$deposit_sig <- deposit_sig
-
-# color-blind friendly color palette for plotting 
-CB_YlGnBu <- c("#ffffcc", "#a1dab4", "#41b6c4", "#225ea8")
-
-
-# plot the deposition rates 
-Figure1 <- ggboxplot(depositionRateSummary_byPlot_mod_simp,
-                                        x = "Treatment", 
-                                        y = "depositionRate", 
-                                        fill = "Treatment", 
-                                        palette =CB_YlGnBu,
-                                        shape = "Treatment", 
-                                        facet.by = c("seedSizeCat"),
-                                        xlab = "Treatment", 
-                                        legend = "none",
-                                        ylab = expression(paste("Deposition Rate (seeds ", m^{-2}, " ", y^{-1},")")))+
-                                        scale_y_log10(breaks = trans_breaks("log10", function(x) 10^x),
-                                          labels = trans_format("log10", math_format(10^.x)))
-Figure1 <- facet(Figure1, facet.by = c("seedSizeCat"),
-                                     panel.labs = list(
-                                     seedSizeCat = c("<5 mm", "\u22655 mm")))+
-                                     theme(axis.text.x = element_text(size = 14),
-                                          axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 0), size = 14),
-                                          axis.text.y = element_text(size = 14),
-                                          axis.title.x = element_blank(),
-                                          strip.text.x = element_text(size=14),
-                                          strip.text.y = element_text(size=14),
-                                          panel.border = element_rect(colour = "black", fill=NA, size=1),
-                                          legend.background = element_rect(colour = 'black', fill = 'white', linetype='solid'))+
-                                      geom_text(data = final, 
-                                                aes(x = Treatment, y = depositionRate, label = deposit_sig),
-                                                vjust=-.45,
-                                                hjust=-.28, 
-                                                fontface = "bold")+
-                                      scale_x_discrete(labels = c("NR", "AN", "P", "R"))
-        
-ggsave("Figure1.pdf", width = 8, height = 4, dpi = 600, units = "in", device=cairo_pdf)
-```
-
 
 ### Final figures/table objects from analyses above:
 Figures --  
