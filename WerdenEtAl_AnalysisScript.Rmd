@@ -707,7 +707,7 @@ modSeed_treatment_mixed <- lmer(deltaSeedLimitation ~ Treatment  + (1|Species), 
 Anova(modSeed_treatment_mixed, type = "II")
 
 # color-blind friendly color palette for plotting 
-CB_YlGnBu <- c("#ffffcc", "#a1dab4", "#41b6c4", "#225ea8")
+CB_YlGnBu <- c("#fec44f", "#a1dab4", "#41b6c4", "#225ea8")
 
 # plot the deltaEstablish by treatment  
 # no treatment differences so no compact letter display necessary
@@ -791,12 +791,6 @@ fig2C_Seed <- ggboxplot(seedLimitAnalysis_final,
                     legend = "none")+ 
                    theme(axis.title.y =  element_text(face = "bold", size = 16))
 fig2C_Seed
-
-# save 
-FigureS3 <- ggarrange(fig2A_Seed, fig2B_Seed, fig2C_Seed, labels = c("A)", "B)", "C)"), ncol = 2, nrow = 2)
-FigureS3
-ggsave("FigureS3.pdf", width = 8, height = 8, units = "in", dpi = 600, device = cairo_pdf)
-
 ```
 <br><br>
 
@@ -1247,7 +1241,7 @@ modEstablish_treatment_mixed <- lmer(deltaEstablishmentLimitation ~ Treatment  +
 Anova(modEstablish_treatment_mixed, type = "II")
 
 # color-blind friendly color palette for plotting 
-CB_YlGnBu <- c("#ffffcc", "#a1dab4", "#41b6c4", "#225ea8")
+CB_YlGnBu <- c("#fec44f", "#a1dab4", "#41b6c4", "#225ea8")
 
 # plot the deltaEstablish by treatment  
 # no treatment differences so no compact letter display necessary
@@ -1355,21 +1349,81 @@ establishLimitAnalysis_final <- establishLimitAnalysis_final %>%
                                  mutate(seedSizeCat="NA") %>% 
                                  mutate(seedSizeCat = ifelse(SeedSize == "1", "<5 mm", seedSizeCat)) %>% 
                                  mutate(seedSizeCat = ifelse(SeedSize == "2" |SeedSize == "3" | SeedSize == "4", "\u22655 mm", seedSizeCat)) 
-
-# no differences between establish limit and seed size seed size 
-fig3C <- ggboxplot(establishLimitAnalysis_final,
-                    x = "seedSizeCat", 
-                    y = "deltaEstablishmentLimitation", 
-                    fill = "seedSizeCat", 
-                    palette =SSpalette,
-                    shape = "seedSizeCat", 
-                    xlab = "Seed Size", 
-                    ylab = expression(delta["establishment"]),
-                    legend = "none")+ 
-                   theme(axis.title.y =  element_text(face = "bold", size = 16))
-fig3C
 ```
 <br><br>
+
+### Look at interactions between treatments and seed size or successional stage for seed and establishment limitation
+* Do two-way ANOVAs on mixed effects linear regressions  
+* Make Figure 2 panels A-C  
+```{r}
+# establishment limitation interactions
+
+# interaction of treatment and seed size (establishment limitatation) is significant
+# include as figure 3C
+# Treatment:seedSizeCat - Chisq (3) = 20.73, p < 0.001; R 0.3324 to 0.0209, t = 4.642, p < 0.001
+establish_TreatXSeedSize <- lmer(deltaEstablishmentLimitation  ~ Treatment * seedSizeCat + (1|Species), establishLimitAnalysis_final)
+Anova(establish_TreatXSeedSize, type = "III")
+establish_TreatXSeedSize.emm <- emmeans(establish_TreatXSeedSize, pairwise ~  seedSizeCat| Treatment)
+emmip(establish_TreatXSeedSize, Treatment ~ seedSizeCat)
+
+fig3C <- emmip(establish_TreatXSeedSize, Treatment ~ seedSizeCat)+
+         theme_pubr()+
+         labs(y = expression(paste("Mean ",delta["establishment"])),
+                           x = "Seed Size")+
+         theme(axis.title.y =  element_text(face = "bold", size = 16), 
+               legend.title = element_text(size=14, face="bold"),
+               legend.text = element_text(size = 12),
+               legend.position = "bottom", 
+               legend.background = element_rect(colour = 'black', fill = 'white', linetype='solid'))+
+         scale_color_manual(values=CB_YlGnBu, 
+                             labels=c("NR", "AN", "P", "R"))+ 
+         geom_line(aes(color = Treatment, group = Treatment), size = 1.5)+ 
+         geom_point(aes(color = Treatment, group = Treatment), size = 3) 
+
+
+# plot the deltaEstablish by treatment  
+# no treatment differences so no compact letter display necessary
+
+# interaction of treatment and successional status (establishment limitatation) is significant
+# just include in text... and say consistent with other results. 
+# Treatment:seedSizeCat - Chisq (2) = 24.06, p < 0.001; R 0.4114 to -0.0421, t = 4.801, p < 0.001
+establish_TreatXSuccession <- lmer(deltaEstablishmentLimitation  ~ Treatment * SuccessionalStage + (1|Species),  subset(establishLimitAnalysis_final, SuccessionalStage == "Early" | SuccessionalStage == "Late"))
+Anova(establish_TreatXSuccession, type = "III")
+emmeans(establish_TreatXSuccession, pairwise ~ SuccessionalStage | Treatment)
+emmip(establish_TreatXSuccession, Treatment ~ SuccessionalStage)
+
+#------
+
+# seed limitation interactions
+# interaction of treatment and seed size (seed limitatation) is significant
+# include as figure S2: D
+# Treatment:seedSizeCat - Chisq (3) = 8.20, p = 0.04; IS 0.429 to 0.230, t = 2.729, p = 0.008
+seed_TreatXSeedSize <- lmer(deltaSeedLimitation  ~ Treatment * seedSizeCat + (1|Species), seedLimitAnalysis_final)
+Anova(seed_TreatXSeedSize, type = "III")
+emmeans(seed_TreatXSeedSize, pairwise ~  seedSizeCat| Treatment)
+emmip(seed_TreatXSeedSize, Treatment ~ seedSizeCat)
+
+figS2D_interact <- emmip(seed_TreatXSeedSize, Treatment ~ seedSizeCat)+
+         theme_pubr()+
+         labs(y = expression(paste("Mean ",delta["establishment"])),
+                           x = "Seed Size")+
+         theme(axis.title.y =  element_text(face = "bold", size = 16), 
+               legend.title = element_text(size=14, face="bold"),
+               legend.text = element_text(size = 12),
+               legend.position = "bottom", 
+               legend.background = element_rect(colour = 'black', fill = 'white', linetype='solid'))+
+         scale_color_manual(values=CB_YlGnBu, 
+                             labels=c("NR", "AN", "P", "R"))+ 
+         geom_line(aes(color = Treatment, group = Treatment), size = 1.5)+ 
+         geom_point(aes(color = Treatment, group = Treatment), size = 3) 
+
+# interaction of treatment and successional status (seed limitatation) is not significant
+# include in text NS result: Treatment:SuccessionalStage - Chisq (2) = 5.3633, p = 0.07
+seed_TreatXSuccession <- lmer(deltaSeedLimitation  ~ Treatment * SuccessionalStage + (1|Species),  subset(seedLimitAnalysis_final, SuccessionalStage == "Early" | SuccessionalStage == "Late"))
+Anova(seed_TreatXSuccession, type = "III")
+emmeans(seed_TreatXSuccession, pairwise ~  SuccessionalStage| Treatment)
+emmip(seed_TreatXSuccession, Treatment ~ SuccessionalStage)
+```
 
 
 ### Compare source limitation between treatments
@@ -1425,11 +1479,19 @@ fig3D
 ### Make figure 2
 * Combine panels to make Figure 2   
 ```{r, warning=FALSE}
-Figure3 <- ggarrange(fig3A, fig3C, fig3B, fig3D, labels = c("A)", "B)", "C)", "D)"), ncol = 2, nrow = 2)
+Figure3 <- ggarrange(fig3A, fig3B, fig3C, fig3D, labels = c("A)", "B)", "C)", "D)"), ncol = 2, nrow = 2)
 Figure3
 ggsave("Figure3.pdf", width = 8, height = 8, units = "in", dpi = 600, device = cairo_pdf)
 ```
 <br><br>
+
+### Make figure S2
+```{r}
+# save 
+FigureS2 <- ggarrange(fig2A_Seed, fig2B_Seed, fig2C_Seed, figS2D_interact, labels = c("A)", "B)", "C)", "D)"), ncol = 2, nrow = 2)
+FigureS2
+ggsave("FigureS3.pdf", width = 8, height = 8, units = "in", dpi = 600, device = cairo_pdf)
+```
 
 
 ## Seed-to-seedling transition modeling -- answering Question 1 in manuscript
@@ -1696,7 +1758,7 @@ dimnames(posteriorFigS2)$parameters[6] <- "Animal dispersed"
 dimnames(posteriorFigS2)$parameters[7] <- "Seed size: \u22655 mm"
 color_scheme_set("darkgray")
 # Make Figure S2 
-FigureS2 <- mcmc_intervals(posteriorFigS2, prob = 0, prob_outer = 0.95, 
+FigureS1 <- mcmc_intervals(posteriorFigS2, prob = 0, prob_outer = 0.95, 
                            pars = c("Natural regeneration", "Applied nucleation", 
                                     "Plantation", "Canopy cover",
                                     "Animal dispersed", "Seed size: \u22655 mm"))+
@@ -1705,8 +1767,8 @@ FigureS2 <- mcmc_intervals(posteriorFigS2, prob = 0, prob_outer = 0.95,
                            axis.text.y = element_text(size = 14))+ 
                            xlim(-1.5, 10)+ 
                            annotate("text", x = 8, y = 6, label = "paste(italic(R) ^ 2, \" = 0.51\")", parse = TRUE, size = 5.5)
-FigureS2
-ggsave("FigureS2.pdf", width = 7, height = 6, units = "in", dpi = 600, device = cairo_pdf)
+FigureS1
+ggsave("FigureS1.pdf", width = 7, height = 6, units = "in", dpi = 600, device = cairo_pdf)
 ```
 <br><br>
 
@@ -1915,11 +1977,11 @@ vegStructureSummary_forMs
 
 ### Final figures/table objects from analyses above:
 Figures --  
-Figure 1: Figure1  
 Figure 2: Figure2  
 Figure 3: Figure3  
+Figure S1: FigureS1  
 Figure S2: FigureS2  
-  
+
 Tables --  
 Table 1: Table1  
 Table 2: Table2  
