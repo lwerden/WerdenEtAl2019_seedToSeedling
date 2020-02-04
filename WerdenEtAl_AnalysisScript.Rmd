@@ -1481,7 +1481,7 @@ fig3D
 ```{r, warning=FALSE}
 Figure3 <- ggarrange(fig3A, fig3B, fig3C, fig3D, labels = c("A)", "B)", "C)", "D)"), ncol = 2, nrow = 2)
 Figure3
-ggsave("Figure3.pdf", width = 8, height = 8, units = "in", dpi = 600, device = cairo_pdf)
+ggsave("Figure3.pdf", width = 9, height = 9, units = "in", dpi = 600, device = cairo_pdf)
 ```
 <br><br>
 
@@ -1490,7 +1490,7 @@ ggsave("Figure3.pdf", width = 8, height = 8, units = "in", dpi = 600, device = c
 # save 
 FigureS2 <- ggarrange(fig2A_Seed, fig2B_Seed, fig2C_Seed, figS2D_interact, labels = c("A)", "B)", "C)", "D)"), ncol = 2, nrow = 2)
 FigureS2
-ggsave("FigureS3.pdf", width = 8, height = 8, units = "in", dpi = 600, device = cairo_pdf)
+ggsave("FigureS3.pdf", width = 9, height = 9, units = "in", dpi = 600, device = cairo_pdf)
 ```
 
 
