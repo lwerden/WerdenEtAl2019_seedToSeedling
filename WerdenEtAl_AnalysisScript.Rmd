@@ -1360,7 +1360,7 @@ establishLimitAnalysis_final <- establishLimitAnalysis_final %>%
 
 # interaction of treatment and seed size (establishment limitatation) is significant
 # include as figure 3C
-# Treatment:seedSizeCat - Chisq (3) = 20.73, p < 0.001; R 0.3324 to 0.0209, t = 4.642, p < 0.001
+# result: Treatment:seedSizeCat - Chisq (3) = 20.73, p < 0.001; R 0.3324 to 0.0209, t = 4.642, p < 0.001
 establish_TreatXSeedSize <- lmer(deltaEstablishmentLimitation  ~ Treatment * seedSizeCat + (1|Species), establishLimitAnalysis_final)
 Anova(establish_TreatXSeedSize, type = "III")
 establish_TreatXSeedSize.emm <- emmeans(establish_TreatXSeedSize, pairwise ~  seedSizeCat| Treatment)
@@ -1385,8 +1385,8 @@ fig3C <- emmip(establish_TreatXSeedSize, Treatment ~ seedSizeCat)+
 # no treatment differences so no compact letter display necessary
 
 # interaction of treatment and successional status (establishment limitatation) is significant
-# just include in text... and say consistent with other results. 
-# Treatment:seedSizeCat - Chisq (2) = 24.06, p < 0.001; R 0.4114 to -0.0421, t = 4.801, p < 0.001
+# just include in text... consistent with figure 3C 
+# result: Treatment:seedSizeCat - Chisq (2) = 24.06, p < 0.001; R 0.4114 to -0.0421, t = 4.801, p < 0.001
 establish_TreatXSuccession <- lmer(deltaEstablishmentLimitation  ~ Treatment * SuccessionalStage + (1|Species),  subset(establishLimitAnalysis_final, SuccessionalStage == "Early" | SuccessionalStage == "Late"))
 Anova(establish_TreatXSuccession, type = "III")
 emmeans(establish_TreatXSuccession, pairwise ~ SuccessionalStage | Treatment)
@@ -1396,8 +1396,8 @@ emmip(establish_TreatXSuccession, Treatment ~ SuccessionalStage)
 
 # seed limitation interactions
 # interaction of treatment and seed size (seed limitatation) is significant
-# include as figure S2: D
-# Treatment:seedSizeCat - Chisq (3) = 8.20, p = 0.04; IS 0.429 to 0.230, t = 2.729, p = 0.008
+# include as figure S2:D
+# result: Treatment:seedSizeCat - Chisq (3) = 8.20, p = 0.04; IS 0.429 to 0.230, t = 2.729, p = 0.008
 seed_TreatXSeedSize <- lmer(deltaSeedLimitation  ~ Treatment * seedSizeCat + (1|Species), seedLimitAnalysis_final)
 Anova(seed_TreatXSeedSize, type = "III")
 emmeans(seed_TreatXSeedSize, pairwise ~  seedSizeCat| Treatment)
@@ -1418,7 +1418,7 @@ figS2D_interact <- emmip(seed_TreatXSeedSize, Treatment ~ seedSizeCat)+
          geom_point(aes(color = Treatment, group = Treatment), size = 3) 
 
 # interaction of treatment and successional status (seed limitatation) is not significant
-# include in text NS result: Treatment:SuccessionalStage - Chisq (2) = 5.3633, p = 0.07
+# result: include in text NS result: Treatment:SuccessionalStage - Chisq (2) = 5.3633, p = 0.07
 seed_TreatXSuccession <- lmer(deltaSeedLimitation  ~ Treatment * SuccessionalStage + (1|Species),  subset(seedLimitAnalysis_final, SuccessionalStage == "Early" | SuccessionalStage == "Late"))
 Anova(seed_TreatXSuccession, type = "III")
 emmeans(seed_TreatXSuccession, pairwise ~  SuccessionalStage| Treatment)
