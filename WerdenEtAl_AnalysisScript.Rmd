@@ -1368,7 +1368,7 @@ establish_TreatXSeedSize.emm <- emmeans(establish_TreatXSeedSize, pairwise ~  se
 fig3C <- emmip(establish_TreatXSeedSize, Treatment ~ seedSizeCat)+
          theme_pubr()+
          labs(y = expression(paste("Mean ",delta["establishment"])),
-                           x = "Seed Size")+
+                           x = "Seed Length")+
          theme(axis.title.y =  element_text(face = "bold", size = 16), 
                legend.title = element_text(size=14, face="bold"),
                legend.text = element_text(size = 12),
@@ -1400,7 +1400,7 @@ emmeans(seed_TreatXSeedSize, pairwise ~  seedSizeCat| Treatment)
 figS2D_interact <- emmip(seed_TreatXSeedSize, Treatment ~ seedSizeCat)+
          theme_pubr()+
          labs(y = expression(paste("Mean ",delta["seed"])),
-                           x = "Seed Size")+
+                           x = "Seed Length")+
          theme(axis.title.y =  element_text(face = "bold", size = 16), 
                legend.title = element_text(size=14, face="bold"),
                legend.text = element_text(size = 12),
